@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "agent-toast",
+  "version": "0.1.0",
+  "identifier": "com.agent-toast.dev",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": null
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE2MjRCQTc0QTkxMDgyNzEKUldSeGdoQ3BkTG9rcHR3cVZ0cXpyL2V0U3JOVkNmbUYrYlExWDg3S3Uvd0VRa2drNzQzK2haeDQK",
+      "endpoints": [
+        "https://github.com/hopoduck/agent-toast/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
