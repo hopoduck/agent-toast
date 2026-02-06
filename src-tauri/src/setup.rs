@@ -154,11 +154,22 @@ fn settings_path() -> PathBuf {
         .join("settings.json")
 }
 
-fn exe_path_raw() -> String {
+/// Returns the exe path without quotes (for TOML array, display, etc.)
+fn exe_path_unquoted() -> String {
     std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("agent-toast.exe"))
         .to_string_lossy()
         .to_string()
+}
+
+/// Returns the exe path quoted if it contains spaces (for shell commands)
+fn exe_path_for_shell() -> String {
+    let path = exe_path_unquoted();
+    if path.contains(' ') {
+        format!("\"{}\"", path)
+    } else {
+        path
+    }
 }
 
 /// Read current hook config from ~/.claude/settings.json
@@ -178,7 +189,6 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     };
 
     let hooks = &root["hooks"];
-    let exe = exe_path_raw();
 
     let mut config = HookConfig {
         // 모든 enabled는 false로 시작 (JSON에서 agent-toast 훅 발견 시 true로 설정)
@@ -421,7 +431,6 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         }
     }
 
-    let _ = exe; // used for future matching refinement
     config
 }
 
@@ -484,7 +493,7 @@ pub fn save_hook_config(
         Value::Object(Default::default())
     };
 
-    let exe = exe_path_raw();
+    let exe = exe_path_for_shell();
     let mut hooks = serde_json::Map::new();
 
     // Preserve non-agent-toast hooks from existing config
@@ -927,7 +936,7 @@ fn save_codex_config(enabled: bool) -> Result<(), String> {
     };
 
     if enabled {
-        let exe = exe_path_raw();
+        let exe = exe_path_unquoted();
         let notify_value = toml::Value::Array(vec![
             toml::Value::String(exe),
             toml::Value::String("--codex".into()),
