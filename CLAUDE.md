@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Language
+## Requirements
 
-항상 한국어로 응답할 것.
+- Node.js 18+
+- pnpm
+- Rust (MSVC toolchain on Windows)
 
 ## Build & Dev Commands
 
@@ -19,12 +21,12 @@ pnpm build                  # vue-tsc --noEmit (type check) + vite build (fronte
 
 ```bash
 # Rust
-cd src-tauri && cargo fmt          # 코드 포맷팅
-cd src-tauri && cargo fmt --check  # 포맷팅 검사 (CI용)
-cd src-tauri && cargo clippy       # 린트 검사
+cd src-tauri && cargo fmt          # Code formatting
+cd src-tauri && cargo fmt --check  # Format check (for CI)
+cd src-tauri && cargo clippy       # Lint check
 
 # TypeScript
-pnpm vue-tsc --noEmit              # 타입 검사만 실행
+pnpm vue-tsc --noEmit              # Type check only
 ```
 
 ## Architecture
@@ -50,16 +52,17 @@ Single `index.html` + `main.ts` serves both notification and setup windows. Wind
 
 ## Rust Backend (src-tauri/src/)
 
-| Module            | Purpose                                                                                            |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| `main.rs`         | CLI entry, single-instance routing via pipe, parent PID auto-detection                             |
-| `lib.rs`          | Tauri app setup, command registration, tray icon                                                   |
-| `cli.rs`          | clap arg parsing, `NotifyRequest` struct                                                           |
-| `pipe.rs`         | Named Pipe server/client (Windows-only, stubs for other OS)                                        |
-| `notification.rs` | Notification lifecycle, window creation, 4-corner positioning with DPI scaling                     |
-| `win32.rs`        | Process tree walking, focus detection, window activation (Windows-only)                            |
+| Module            | Purpose                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| `main.rs`         | CLI entry, single-instance routing via pipe, parent PID auto-detection                              |
+| `lib.rs`          | Tauri app setup, command registration, tray icon                                                    |
+| `cli.rs`          | clap arg parsing, `NotifyRequest` struct                                                            |
+| `pipe.rs`         | Named Pipe server/client (Windows-only, stubs for other OS)                                         |
+| `notification.rs` | Notification lifecycle, window creation, 4-corner positioning with DPI scaling                      |
+| `win32.rs`        | Process tree walking, focus detection, window activation (Windows-only)                             |
 | `setup.rs`        | Settings file I/O (`~/.claude/settings.json`), hook config builder, preserves non-agent-toast hooks |
-| `sound.rs`        | System notification sound via `PlaySoundW`                                                         |
+| `sound.rs`        | System notification sound via `PlaySoundW`                                                          |
+| `updater.rs`      | Auto-update check via GitHub API (12-hour interval), update notification                            |
 
 ### Critical Win32 Logic
 
@@ -77,7 +80,7 @@ Single `index.html` + `main.ts` serves both notification and setup windows. Wind
 
 ## Frontend (src/)
 
-Vue 3 + TypeScript + Composition API. UI 컴포넌트는 shadcn-vue (`src/components/ui/`).
+Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/components/ui/`).
 
 | File                             | Purpose                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------ |
@@ -93,15 +96,23 @@ Vue 3 + TypeScript + Composition API. UI 컴포넌트는 shadcn-vue (`src/compon
 
 ```bash
 agent-toast.exe --pid 1234 --event task_complete --message "Build done"
-agent-toast.exe --daemon          # 알림 없이 백그라운드 실행
-agent-toast.exe --codex           # Codex CLI 연동 알림
+agent-toast.exe --daemon          # Run in background without notification
+agent-toast.exe --setup           # Open settings window
+agent-toast.exe --codex           # Codex CLI integration notification
 ```
 
 Events: `task_complete`, `user_input_required`, `error`
 
 `CLAUDE_PROJECT_DIR` env var is used as `title_hint` for window matching when `--title` is not provided.
 
-## Settings Files
+## Configuration Files
 
-- `~/.claude/settings.json`: Claude Code 훅 설정 (setup.rs가 읽고 쓰는 파일, 기존 non-agent-toast 훅 보존)
-- `~/.codex/config.toml`: Codex CLI 알림 훅 설정
+### App Config (src-tauri/)
+
+- `tauri.conf.json`: Tauri app settings (window size, permissions, build config)
+- `capabilities/default.json`: Default Tauri permission settings
+
+### User Settings
+
+- `~/.claude/settings.json`: Claude Code hook settings (read/written by setup.rs, preserves non-agent-toast hooks)
+- `~/.codex/config.toml`: Codex CLI notification hook settings
