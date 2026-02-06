@@ -49,8 +49,14 @@ fn try_acquire_singleton() -> Option<windows::Win32::Foundation::HANDLE> {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::Threading::CreateMutexW;
 
+    #[cfg(debug_assertions)]
+    const MUTEX_NAME: windows::core::PCWSTR = w!("agent-toast-singleton-dev");
+
+    #[cfg(not(debug_assertions))]
+    const MUTEX_NAME: windows::core::PCWSTR = w!("agent-toast-singleton");
+
     let handle: HANDLE =
-        unsafe { CreateMutexW(None, true, w!("agent-toast-singleton")) }.unwrap_or_default();
+        unsafe { CreateMutexW(None, true, MUTEX_NAME) }.unwrap_or_default();
     if handle.is_invalid() || handle == HANDLE::default() {
         return None;
     }

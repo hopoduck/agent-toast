@@ -26,6 +26,7 @@ type EventType = "default" | "success" | "warning" | "error" | "codex";
 
 const notification = ref<NotificationData | null>(null);
 const show = ref(false);
+const isDevMode = ref(false);
 const dismissActive = ref(false);
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 let currentNotificationId: string | null = null;
@@ -151,6 +152,7 @@ onMounted(async () => {
   try {
     const savedLocale = await invoke<string>("get_locale");
     if (savedLocale) locale.value = savedLocale;
+    isDevMode.value = await invoke<boolean>("is_dev_mode");
   } catch {
     /* ignore */
   }
@@ -265,6 +267,11 @@ async function onClose() {
             class="text-[13px] font-semibold tracking-wide"
             :class="styles.label"
             >{{ eventLabel }}</span
+          >
+          <span
+            v-if="isDevMode"
+            class="px-1 py-0.5 text-[9px] font-bold bg-red-500 text-white rounded"
+            >DEV</span
           >
         </div>
         <button

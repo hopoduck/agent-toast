@@ -1,6 +1,10 @@
 use crate::cli::NotifyRequest;
 use std::io::Write;
 
+#[cfg(debug_assertions)]
+const PIPE_NAME: &str = r"\\.\pipe\agent-toast-dev";
+
+#[cfg(not(debug_assertions))]
 const PIPE_NAME: &str = r"\\.\pipe\agent-toast";
 
 /// Check if a pipe server is already running by attempting to open the pipe.

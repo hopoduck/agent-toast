@@ -89,6 +89,7 @@ const exePath = ref("");
 const savedExePath = ref<string | null>(null);
 const exePathMismatch = ref(false);
 const isSaving = ref(false);
+const isDevMode = ref(false);
 
 function normalizePath(p: string): string {
   return p.replace(/\//g, "\\").toLowerCase();
@@ -126,6 +127,7 @@ onMounted(async () => {
   locale.value = config.value.locale;
   exePath.value = await invoke<string>("get_exe_path");
   savedExePath.value = await invoke<string | null>("get_saved_exe_path");
+  isDevMode.value = await invoke<boolean>("is_dev_mode");
   if (savedExePath.value) {
     exePathMismatch.value =
       normalizePath(savedExePath.value) !== normalizePath(exePath.value);
@@ -221,7 +223,14 @@ async function onClose() {
     >
       <!-- Header -->
       <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold">{{ t("setup.title") }}</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl font-semibold">{{ t("setup.title") }}</h1>
+          <span
+            v-if="isDevMode"
+            class="px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white rounded"
+            >DEV</span
+          >
+        </div>
         <div class="flex items-center gap-1">
           <Button
             variant="ghost"

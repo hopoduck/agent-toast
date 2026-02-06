@@ -42,6 +42,11 @@ fn get_locale() -> String {
 }
 
 #[tauri::command]
+fn is_dev_mode() -> bool {
+    cfg!(debug_assertions)
+}
+
+#[tauri::command]
 fn get_monitor_list() -> Vec<win32::MonitorInfo> {
     win32::get_monitor_list()
 }
@@ -151,6 +156,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             get_notification_data,
             test_notification,
             get_locale,
+            is_dev_mode,
             open_settings,
             setup::get_hook_config,
             setup::save_hook_config,
