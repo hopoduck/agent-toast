@@ -55,6 +55,8 @@ jobs:
             Agent Toast 업데이트입니다.
 
             ## 설치 방법
-            - `Agent.Toast_*_x64-setup.exe` 다운로드 후 실행
-            - 또는 기존 버전에서 자동 업데이트
+            - `Agent.Toast_*_x64-setup.exe` - 설치 프로그램
+            - `Agent.Toast.exe` - 포터블 (설치 없이 실행)
+            - 기존 버전에서 자동 업데이트
+          includeRelease: true
           args: --config src-tauri/tauri.release.conf.json
