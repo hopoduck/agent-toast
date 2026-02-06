@@ -159,7 +159,8 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::open_settings_file,
             setup::is_hook_config_saved,
             setup::get_codex_installed,
-            get_monitor_list
+            get_monitor_list,
+            updater::mark_update_pending
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -230,6 +231,9 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
                     show_notification(&init_handle, &init_state, req);
                 });
             }
+
+            // Check if update was just completed
+            updater::check_update_completed(&handle, &state);
 
             // Check for updates in background
             updater::check_for_updates(&handle, &state);

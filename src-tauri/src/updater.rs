@@ -13,6 +13,7 @@ const CHECK_INTERVAL_HOURS: i64 = 12;
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct UpdaterState {
     last_check: Option<String>,
+    pending_version: Option<String>,
 }
 
 fn get_state_path() -> Option<PathBuf> {
@@ -52,9 +53,8 @@ fn should_check() -> bool {
 }
 
 fn mark_checked() {
-    let state = UpdaterState {
-        last_check: Some(Utc::now().to_rfc3339()),
-    };
+    let mut state = load_state();
+    state.last_check = Some(Utc::now().to_rfc3339());
     save_state(&state);
 }
 
@@ -151,6 +151,56 @@ fn show_update_notification(app: &AppHandle, state: &NotificationManagerState, v
     let req = NotifyRequest {
         pid: 0,
         event: "update_available".to_string(),
+        message: Some(message),
+        title_hint: Some("Agent Toast".to_string()),
+        process_tree: Some(vec![]),
+        source: "updater".into(),
+    };
+
+    show_notification(app, state, req);
+}
+
+#[tauri::command]
+pub fn mark_update_pending(version: String) {
+    let mut state = load_state();
+    state.pending_version = Some(version);
+    save_state(&state);
+    eprintln!("[updater] Marked update pending");
+}
+
+pub fn check_update_completed(app: &AppHandle, state: &NotificationManagerState) {
+    let mut updater_state = load_state();
+    if let Some(pending_version) = updater_state.pending_version.take() {
+        save_state(&updater_state);
+
+        let current_version = app.package_info().version.to_string();
+        // Only show completion if we're now on the pending version
+        if format!("v{}", current_version) == pending_version
+            || current_version == pending_version.trim_start_matches('v')
+        {
+            eprintln!(
+                "[updater] Update completed: {} -> {}",
+                pending_version, current_version
+            );
+            show_update_completed_notification(app, state, &current_version);
+        }
+    }
+}
+
+fn show_update_completed_notification(
+    app: &AppHandle,
+    state: &NotificationManagerState,
+    version: &str,
+) {
+    let locale = crate::setup::read_locale();
+    let message = match locale.as_str() {
+        "en" => format!("Updated to v{}!", version),
+        _ => format!("v{}(으)로 업데이트되었습니다!", version),
+    };
+
+    let req = NotifyRequest {
+        pid: 0,
+        event: "task_complete".to_string(),
         message: Some(message),
         title_hint: Some("Agent Toast".to_string()),
         process_tree: Some(vec![]),

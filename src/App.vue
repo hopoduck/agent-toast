@@ -76,6 +76,12 @@ const eventIcon = computed(() => eventIconMap[eventType.value]);
 
 const sourceLogo = computed(() => (isCodex.value ? openaiLogo : claudeLogo));
 
+const isUpdater = computed(() => notification.value?.source === "updater");
+
+const viewButtonText = computed(() =>
+  isUpdater.value ? t("notification.update") : t("notification.view"),
+);
+
 const eventStyles: Record<
   EventType,
   {
@@ -175,6 +181,7 @@ async function onView() {
     try {
       const update = await check();
       if (update) {
+        await invoke("mark_update_pending", { version: update.version });
         await update.downloadAndInstall();
         await relaunch();
       }
@@ -292,7 +299,7 @@ async function onClose() {
           @click="onView"
         >
           <ChevronRight :size="14" />
-          {{ t("notification.view") }}
+          {{ viewButtonText }}
         </button>
         <button
           class="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-white/15 text-white/80 border border-white/20 hover:bg-white/25 transition-colors"

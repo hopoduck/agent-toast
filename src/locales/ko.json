@@ -9,6 +9,7 @@
   },
   "notification": {
     "view": "보기",
+    "update": "업데이트",
     "close": "닫기"
   },
   "setup": {
@@ -139,7 +140,9 @@
     "update_download": "다운로드 및 설치",
     "update_downloading": "다운로드 중... {percent}%",
     "update_restart": "재시작하여 적용",
-    "update_error": "업데이트 오류: {msg}"
+    "update_error": "업데이트 오류: {msg}",
+    "update_completed": "업데이트 완료",
+    "update_completed_message": "v{version}(으)로 업데이트되었습니다!"
   },
   "defaults": {
     "stop_message": "작업이 완료되었습니다",

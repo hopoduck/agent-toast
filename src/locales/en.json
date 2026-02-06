@@ -9,6 +9,7 @@
   },
   "notification": {
     "view": "View",
+    "update": "Update",
     "close": "Close"
   },
   "setup": {
@@ -137,7 +138,9 @@
     "update_downloading": "Downloading... {percent}%",
     "update_download": "Download & Install",
     "update_restart": "Restart to Apply",
-    "update_error": "Update error: {msg}"
+    "update_error": "Update error: {msg}",
+    "update_completed": "Update Complete",
+    "update_completed_message": "Updated to v{version}!"
   },
   "defaults": {
     "stop_message": "Task completed",
