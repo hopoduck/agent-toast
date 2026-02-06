@@ -56,7 +56,13 @@ jobs:
 
             ## 설치 방법
             - `Agent.Toast_*_x64-setup.exe` - 설치 프로그램
-            - `Agent.Toast.exe` - 포터블 (설치 없이 실행)
+            - `agent-toast.exe` - 포터블 (설치 없이 실행)
             - 기존 버전에서 자동 업데이트
           includeRelease: true
           args: --config src-tauri/tauri.release.conf.json
+
+      - name: Upload portable exe
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: src-tauri/target/release/agent-toast.exe
