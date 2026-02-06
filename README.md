@@ -1,4 +1,8 @@
 <p align="center">
+  <strong>한국어</strong> | <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <img src="public/logo.png" width="120" alt="Agent Toast Logo">
 </p>
 
