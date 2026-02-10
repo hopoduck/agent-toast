@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use clap::Parser;
+use log::{debug, error, info};
+
 use agent_toast_lib::cli::{Cli, NotifyRequest};
 use agent_toast_lib::pipe;
 use agent_toast_lib::win32;
@@ -55,8 +57,7 @@ fn try_acquire_singleton() -> Option<windows::Win32::Foundation::HANDLE> {
     #[cfg(not(debug_assertions))]
     const MUTEX_NAME: windows::core::PCWSTR = w!("agent-toast-singleton");
 
-    let handle: HANDLE =
-        unsafe { CreateMutexW(None, true, MUTEX_NAME) }.unwrap_or_default();
+    let handle: HANDLE = unsafe { CreateMutexW(None, true, MUTEX_NAME) }.unwrap_or_default();
     if handle.is_invalid() || handle == HANDLE::default() {
         return None;
     }
@@ -85,7 +86,7 @@ fn main() {
         let json_str = args.codex_json.unwrap_or_default();
         let codex_payload: serde_json::Value =
             serde_json::from_str(&json_str).unwrap_or_else(|e| {
-                eprintln!("[ERROR] Failed to parse Codex JSON: {}", e);
+                error!("Failed to parse Codex JSON: {}", e);
                 std::process::exit(1);
             });
 
@@ -144,7 +145,7 @@ fn main() {
         }
         let _mutex = try_acquire_singleton();
         if _mutex.is_none() {
-            eprintln!("[INFO] Another instance is already starting up, exiting.");
+            info!("Another instance is already starting up, exiting.");
             return;
         }
         // Start as daemon: just launch the Tauri app with no initial notification
@@ -156,7 +157,7 @@ fn main() {
         let _mutex = try_acquire_singleton();
         if _mutex.is_none() {
             // Another instance exists; try to signal it via pipe, then exit
-            eprintln!("[INFO] Another instance is already running, exiting.");
+            info!("Another instance is already running, exiting.");
             return;
         }
         // No args or --setup: launch app with setup GUI (daemon also runs)
@@ -168,11 +169,7 @@ fn main() {
     // We use parent because this process may exit before the daemon reads the snapshot.
     let pid = args.pid.unwrap_or_else(|| {
         let ppid = get_parent_pid();
-        eprintln!(
-            "[DEBUG] auto pid: self={}, parent={}",
-            std::process::id(),
-            ppid
-        );
+        debug!("auto pid: self={}, parent={}", std::process::id(), ppid);
         ppid
     });
     let event = args
@@ -213,4 +210,3 @@ fn main() {
         }
     }
 }
-

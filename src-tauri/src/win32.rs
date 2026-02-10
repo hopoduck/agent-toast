@@ -1,3 +1,4 @@
+use log::debug;
 use std::sync::{Arc, Mutex};
 
 /// (hwnd, pid) pair identifying a window candidate.
@@ -95,8 +96,8 @@ pub fn get_process_tree(start_pid: u32) -> Vec<u32> {
             {
                 let parent_lower = parent_exe.to_lowercase();
                 if BLOCKED_EXES.iter().any(|b| parent_lower == *b) {
-                    eprintln!(
-                        "[DEBUG] get_process_tree: stopped at blocked process '{}' (pid={})",
+                    debug!(
+                        "get_process_tree: stopped at blocked process '{}' (pid={})",
                         parent_exe, parent
                     );
                     break;
@@ -109,11 +110,7 @@ pub fn get_process_tree(start_pid: u32) -> Vec<u32> {
         }
     }
 
-    // Debug
-    eprintln!(
-        "[DEBUG] get_process_tree: start_pid={}, tree={:?}",
-        start_pid, tree
-    );
+    debug!("get_process_tree: start_pid={}, tree={:?}", start_pid, tree);
 
     tree
 }
@@ -205,9 +202,9 @@ pub fn is_hwnd_focused(hwnd: isize) -> bool {
 /// Bring the source window to foreground.
 #[cfg(windows)]
 pub fn activate_window(hwnd: isize) {
-    eprintln!("[DEBUG] activate_window: hwnd={}", hwnd);
+    debug!("activate_window: hwnd={}", hwnd);
     if hwnd == 0 {
-        eprintln!("[DEBUG] activate_window: hwnd is 0, skipping");
+        debug!("activate_window: hwnd is 0, skipping");
         return;
     }
     let hwnd = HWND(hwnd as *mut _);

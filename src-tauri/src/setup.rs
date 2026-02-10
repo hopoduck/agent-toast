@@ -446,7 +446,11 @@ pub fn is_hook_config_saved() -> bool {
     };
     let hooks = &root["hooks"];
     // Check if agent_toast section exists (covers codex-only usage)
-    if root.get("agent_toast").and_then(|v| v.as_object()).is_some() {
+    if root
+        .get("agent_toast")
+        .and_then(|v| v.as_object())
+        .is_some()
+    {
         return true;
     }
     // Check if any hook event array contains a agent-toast command

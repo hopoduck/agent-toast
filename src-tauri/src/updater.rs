@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
@@ -85,14 +86,14 @@ fn is_newer(current: &str, latest: &str) -> bool {
 
 pub fn check_for_updates(app: &AppHandle, state: &NotificationManagerState) {
     if !should_check() {
-        eprintln!("[updater] Skipping check, not enough time passed");
+        debug!("Skipping check, not enough time passed");
         return;
     }
 
     let app = app.clone();
     let state = state.clone();
     std::thread::spawn(move || {
-        eprintln!("[updater] Checking for updates...");
+        info!("Checking for updates...");
 
         let client = match reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
@@ -100,7 +101,7 @@ pub fn check_for_updates(app: &AppHandle, state: &NotificationManagerState) {
         {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[updater] Failed to create HTTP client: {}", e);
+                error!("Failed to create HTTP client: {}", e);
                 return;
             }
         };
@@ -114,12 +115,12 @@ pub fn check_for_updates(app: &AppHandle, state: &NotificationManagerState) {
             Ok(r) => match r.json() {
                 Ok(j) => j,
                 Err(e) => {
-                    eprintln!("[updater] Failed to parse response: {}", e);
+                    error!("Failed to parse response: {}", e);
                     return;
                 }
             },
             Err(e) => {
-                eprintln!("[updater] Failed to fetch: {}", e);
+                error!("Failed to fetch: {}", e);
                 return;
             }
         };
@@ -127,16 +128,13 @@ pub fn check_for_updates(app: &AppHandle, state: &NotificationManagerState) {
         mark_checked();
 
         let current_version = app.package_info().version.to_string();
-        eprintln!(
-            "[updater] Current: {}, Latest: {}",
-            current_version, release.tag_name
-        );
+        info!("Current: {}, Latest: {}", current_version, release.tag_name);
 
         if is_newer(&current_version, &release.tag_name) {
-            eprintln!("[updater] New version available!");
+            info!("New version available!");
             show_update_notification(&app, &state, &release.tag_name);
         } else {
-            eprintln!("[updater] Already up to date");
+            debug!("Already up to date");
         }
     });
 }
@@ -145,7 +143,10 @@ fn show_update_notification(app: &AppHandle, state: &NotificationManagerState, v
     let locale = crate::setup::read_locale();
     let message = match locale.as_str() {
         "en" => format!("Version {} is available. Click to update.", version),
-        _ => format!("{} 버전을 사용할 수 있습니다. 클릭하여 업데이트하세요.", version),
+        _ => format!(
+            "{} 버전을 사용할 수 있습니다. 클릭하여 업데이트하세요.",
+            version
+        ),
     };
 
     let req = NotifyRequest {
@@ -165,7 +166,7 @@ pub fn mark_update_pending(version: String) {
     let mut state = load_state();
     state.pending_version = Some(version);
     save_state(&state);
-    eprintln!("[updater] Marked update pending");
+    debug!("Marked update pending");
 }
 
 #[cfg(test)]
@@ -286,7 +287,10 @@ mod tests {
         };
         let json = serde_json::to_string(&state).unwrap();
         let deserialized: UpdaterState = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.last_check, Some("2024-01-01T12:00:00Z".to_string()));
+        assert_eq!(
+            deserialized.last_check,
+            Some("2024-01-01T12:00:00Z".to_string())
+        );
         assert_eq!(deserialized.pending_version, Some("v1.2.3".to_string()));
     }
 
@@ -399,8 +403,8 @@ pub fn check_update_completed(app: &AppHandle, state: &NotificationManagerState)
         if format!("v{}", current_version) == pending_version
             || current_version == pending_version.trim_start_matches('v')
         {
-            eprintln!(
-                "[updater] Update completed: {} -> {}",
+            info!(
+                "Update completed: {} -> {}",
                 pending_version, current_version
             );
             show_update_completed_notification(app, state, &current_version);

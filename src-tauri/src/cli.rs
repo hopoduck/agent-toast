@@ -2,7 +2,10 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
-#[command(name = "agent-toast", about = "Smart notification for AI coding agents")]
+#[command(
+    name = "agent-toast",
+    about = "Smart notification for AI coding agents"
+)]
 pub struct Cli {
     /// PID of the source terminal/editor (defaults to current process)
     #[arg(long)]
@@ -305,22 +308,15 @@ mod tests {
 
     #[test]
     fn cli_parse_codex_with_json_payload() {
-        let cli =
-            Cli::try_parse_from(["agent-toast", "--codex", r#"{"type":"test"}"#]).unwrap();
+        let cli = Cli::try_parse_from(["agent-toast", "--codex", r#"{"type":"test"}"#]).unwrap();
         assert!(cli.codex);
         assert_eq!(cli.codex_json.as_deref(), Some(r#"{"type":"test"}"#));
     }
 
     #[test]
     fn cli_parse_pid_and_event() {
-        let cli = Cli::try_parse_from([
-            "agent-toast",
-            "--pid",
-            "1234",
-            "--event",
-            "task_complete",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["agent-toast", "--pid", "1234", "--event", "task_complete"])
+            .unwrap();
         assert_eq!(cli.pid, Some(1234));
         assert_eq!(cli.event.as_deref(), Some("task_complete"));
     }
@@ -379,12 +375,7 @@ mod tests {
 
     #[test]
     fn cli_parse_message_with_unicode() {
-        let cli = Cli::try_parse_from([
-            "agent-toast",
-            "--message",
-            "빌드 완료 🎉",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["agent-toast", "--message", "빌드 완료 🎉"]).unwrap();
         assert_eq!(cli.message.as_deref(), Some("빌드 완료 🎉"));
     }
 
@@ -397,8 +388,7 @@ mod tests {
 
     #[test]
     fn cli_parse_max_pid() {
-        let cli =
-            Cli::try_parse_from(["agent-toast", "--pid", &u32::MAX.to_string()]).unwrap();
+        let cli = Cli::try_parse_from(["agent-toast", "--pid", &u32::MAX.to_string()]).unwrap();
         assert_eq!(cli.pid, Some(u32::MAX));
     }
 

@@ -71,7 +71,9 @@ pub fn show_notification(
 ) {
     log::debug!(
         "[NOTIFY] show_notification called: event={}, pid={}, source={}",
-        request.event, request.pid, request.source
+        request.event,
+        request.pid,
+        request.source
     );
 
     // For internal notifications (updater), skip win32 lookups
@@ -81,7 +83,10 @@ pub fn show_notification(
         (
             0isize,
             vec![],
-            request.title_hint.clone().unwrap_or_else(|| "Agent Toast".to_string()),
+            request
+                .title_hint
+                .clone()
+                .unwrap_or_else(|| "Agent Toast".to_string()),
         )
     } else {
         let tree = request
@@ -94,7 +99,10 @@ pub fn show_notification(
             win32::find_source_window(&tree, request.title_hint.as_deref());
         log::debug!(
             "[DEBUG] event={}, title_hint={:?}, process_tree={:?}, find_source_window={:?}",
-            request.event, request.title_hint, tree, found
+            request.event,
+            request.title_hint,
+            tree,
+            found
         );
         for (h, p) in &all_candidates {
             let title = win32::get_window_title(*h);
@@ -177,7 +185,8 @@ pub fn show_notification(
             Ok(win) => {
                 log::debug!("[NOTIFY] Window created: id={}", id);
                 // Explicitly set position with Logical coordinates (builder may use Physical)
-                let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+                let _ =
+                    win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
 
                 // 알림 소리 재생
                 if crate::setup::load_notification_sound() {
@@ -191,7 +200,9 @@ pub fn show_notification(
                     std::thread::sleep(std::time::Duration::from_millis(500));
                     match app_clone.emit_to(&label, "notification-data", &data_clone) {
                         Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
-                        Err(e) => log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e),
+                        Err(e) => {
+                            log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e)
+                        }
                     }
                 });
             }
@@ -332,7 +343,8 @@ pub fn on_foreground_changed(
     if !to_close.is_empty() {
         log::debug!(
             "[DEBUG] on_foreground_changed: focused_hwnd={}, closing={:?}",
-            focused_hwnd, to_close
+            focused_hwnd,
+            to_close
         );
     }
 

@@ -7,7 +7,7 @@ mod updater;
 pub mod win32;
 
 use log::LevelFilter;
-use simplelog::{CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger, ColorChoice};
+use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 use std::fs::OpenOptions;
 
 use cli::NotifyRequest;
@@ -159,11 +159,18 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         .open(&log_path)
         .ok();
 
-    let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = vec![
-        TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Stderr, ColorChoice::Auto),
-    ];
+    let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = vec![TermLogger::new(
+        LevelFilter::Debug,
+        Config::default(),
+        TerminalMode::Stderr,
+        ColorChoice::Auto,
+    )];
     if let Some(file) = log_file {
-        loggers.push(WriteLogger::new(LevelFilter::Debug, Config::default(), file));
+        loggers.push(WriteLogger::new(
+            LevelFilter::Debug,
+            Config::default(),
+            file,
+        ));
     }
     let _ = CombinedLogger::init(loggers);
 
@@ -175,7 +182,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-                .manage(mgr_state.clone())
+        .manage(mgr_state.clone())
         .invoke_handler(tauri::generate_handler![
             close_notify,
             activate_source,
@@ -221,8 +228,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             // - 제목표시줄도 icon.ico 사용해서 해상도 깨짐 (Tauri 수정 필요)
             // - 관련 이슈: https://github.com/tauri-apps/tauri/issues/14596
             let tray_icon_bytes = include_bytes!("../icons/tray.ico");
-            let tray_icon = Image::from_bytes(tray_icon_bytes)
-                .expect("failed to load tray icon");
+            let tray_icon = Image::from_bytes(tray_icon_bytes).expect("failed to load tray icon");
             TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu)

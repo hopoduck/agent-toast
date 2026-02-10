@@ -106,7 +106,11 @@ where
 
     match serde_json::from_slice::<NotifyRequest>(&buf) {
         Ok(req) => {
-            log::debug!("[PIPE] Received request: event={}, pid={}", req.event, req.pid);
+            log::debug!(
+                "[PIPE] Received request: event={}, pid={}",
+                req.event,
+                req.pid
+            );
             on_request(req);
             log::debug!("[PIPE] Callback completed");
         }
@@ -306,7 +310,10 @@ mod tests {
         assert_eq!(decoded.event, "user_input_required");
         assert_eq!(decoded.message.as_deref(), Some("권한 승인이 필요합니다"));
         assert_eq!(decoded.title_hint.as_deref(), Some("my-awesome-project"));
-        assert_eq!(decoded.process_tree, Some(vec![1000, 2000, 3000, 4000, 5000]));
+        assert_eq!(
+            decoded.process_tree,
+            Some(vec![1000, 2000, 3000, 4000, 5000])
+        );
         assert_eq!(decoded.source, "claude");
     }
 
