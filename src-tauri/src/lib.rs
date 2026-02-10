@@ -6,6 +6,10 @@ pub mod sound;
 mod updater;
 pub mod win32;
 
+use log::LevelFilter;
+use simplelog::{CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger, ColorChoice};
+use std::fs::File;
+
 use cli::NotifyRequest;
 use notification::{
     close_notification, get_notification_for_window, on_foreground_changed, show_notification,
@@ -65,7 +69,7 @@ fn close_notify(id: String, app: AppHandle) {
 
 #[tauri::command]
 fn activate_source(hwnd: isize, id: String, app: AppHandle) {
-    eprintln!("[DEBUG] activate_source called: hwnd={}, id={}", hwnd, id);
+    log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
     win32::activate_window(hwnd);
     let state = app.state::<NotificationManagerState>();
     close_notification(&app, &state, &id);
@@ -73,6 +77,7 @@ fn activate_source(hwnd: isize, id: String, app: AppHandle) {
 
 #[tauri::command]
 fn test_notification(app: AppHandle) {
+    log::debug!("[TEST] test_notification command called");
     let state = app.state::<NotificationManagerState>().inner().clone();
     let locale = setup::read_locale();
 
@@ -96,8 +101,11 @@ fn test_notification(app: AppHandle) {
         process_tree: Some(vec![]),
         source: "claude".into(),
     };
+    log::debug!("[TEST] Spawning notification thread for event={}", event);
     std::thread::spawn(move || {
+        log::debug!("[TEST] Thread started, calling show_notification");
         show_notification(&app, &state, req);
+        log::debug!("[TEST] show_notification returned");
     });
 }
 
@@ -143,6 +151,20 @@ pub fn open_setup_window_with_tab(app: &AppHandle, tab: Option<&str>) {
 }
 
 pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
+    // Initialize logging to temp file + terminal
+    let log_path = std::env::temp_dir().join("agent-toast.log");
+    let log_file = File::create(&log_path).ok();
+
+    let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = vec![
+        TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Stderr, ColorChoice::Auto),
+    ];
+    if let Some(file) = log_file {
+        loggers.push(WriteLogger::new(LevelFilter::Debug, Config::default(), file));
+    }
+    let _ = CombinedLogger::init(loggers);
+
+    log::info!("=== Agent Toast Started === (log: {})", log_path.display());
+
     let mgr_state = notification::create_manager();
 
     tauri::Builder::default()

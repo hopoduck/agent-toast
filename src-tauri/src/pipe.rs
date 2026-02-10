@@ -40,7 +40,7 @@ where
             if let Err(e) = run_pipe_instance(&on_request) {
                 fail_count += 1;
                 let delay = std::cmp::min(100 * fail_count as u64, 5000);
-                eprintln!("Pipe error (attempt {fail_count}): {e}");
+                log::error!("Pipe error (attempt {fail_count}): {e}");
                 std::thread::sleep(std::time::Duration::from_millis(delay));
             } else {
                 fail_count = 0;
@@ -82,8 +82,10 @@ where
     }
 
     // ConnectNamedPipe returns Result<()> in windows 0.58
+    log::debug!("[PIPE] Waiting for client connection...");
     unsafe { ConnectNamedPipe(handle, None) }
         .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+    log::debug!("[PIPE] Client connected");
 
     // Read length prefix
     let mut len_buf = [0u8; 4];
@@ -102,13 +104,24 @@ where
         total_read += br as usize;
     }
 
-    if let Ok(req) = serde_json::from_slice::<NotifyRequest>(&buf) {
-        on_request(req);
+    match serde_json::from_slice::<NotifyRequest>(&buf) {
+        Ok(req) => {
+            log::debug!("[PIPE] Received request: event={}, pid={}", req.event, req.pid);
+            on_request(req);
+            log::debug!("[PIPE] Callback completed");
+        }
+        Err(e) => {
+            log::error!("[PIPE] JSON parse error: {}", e);
+        }
     }
 
     unsafe {
-        let _ = DisconnectNamedPipe(handle);
-        let _ = CloseHandle(handle);
+        if let Err(e) = DisconnectNamedPipe(handle) {
+            log::warn!("[PIPE] DisconnectNamedPipe failed: {:?}", e);
+        }
+        if let Err(e) = CloseHandle(handle) {
+            log::warn!("[PIPE] CloseHandle failed: {:?}", e);
+        }
     }
 
     Ok(())

@@ -5,8 +5,13 @@ use std::sync::{Arc, Mutex};
 use tauri::window::Color;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
+/// Notification window width in logical pixels.
+/// Sized to fit title + message comfortably (min 200, max 600 for readability).
 const NOTIFICATION_WIDTH: f64 = 380.0;
+/// Notification window height in logical pixels.
+/// Sized to fit 2-3 lines of text with padding (min 80, max 300).
 const NOTIFICATION_HEIGHT: f64 = 140.0;
+/// Margin between notification windows and screen edges in logical pixels.
 const NOTIFICATION_MARGIN: f64 = 10.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +69,11 @@ pub fn show_notification(
     state: &NotificationManagerState,
     request: NotifyRequest,
 ) {
+    log::debug!(
+        "[NOTIFY] show_notification called: event={}, pid={}, source={}",
+        request.event, request.pid, request.source
+    );
+
     // For internal notifications (updater), skip win32 lookups
     let is_internal = request.source == "updater";
 
@@ -82,19 +92,19 @@ pub fn show_notification(
 
         let (all_candidates, found) =
             win32::find_source_window(&tree, request.title_hint.as_deref());
-        eprintln!(
+        log::debug!(
             "[DEBUG] event={}, title_hint={:?}, process_tree={:?}, find_source_window={:?}",
             request.event, request.title_hint, tree, found
         );
         for (h, p) in &all_candidates {
             let title = win32::get_window_title(*h);
-            eprintln!("[DEBUG]   candidate hwnd={} pid={} title={:?}", h, p, title);
+            log::debug!("[DEBUG]   candidate hwnd={} pid={} title={:?}", h, p, title);
         }
         let (hwnd, _) = found.unwrap_or((0, 0));
 
         // FR-2: Skip if source window is already focused (compare by HWND, not PID)
         let focused = win32::is_hwnd_focused(hwnd);
-        eprintln!("[DEBUG] is_hwnd_focused({})={}", hwnd, focused);
+        log::debug!("[DEBUG] is_hwnd_focused({})={}", hwnd, focused);
         if focused {
             return;
         }
@@ -163,28 +173,40 @@ pub fn show_notification(
             .focused(false)
             .build();
 
-        if let Ok(win) = window {
-            // Explicitly set position with Logical coordinates (builder may use Physical)
-            let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+        match window {
+            Ok(win) => {
+                log::debug!("[NOTIFY] Window created: id={}", id);
+                // Explicitly set position with Logical coordinates (builder may use Physical)
+                let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
 
-            // 알림 소리 재생
-            if crate::setup::load_notification_sound() {
-                crate::sound::play_notification_sound();
+                // 알림 소리 재생
+                if crate::setup::load_notification_sound() {
+                    crate::sound::play_notification_sound();
+                }
+                // Also emit event as backup (frontend primarily uses invoke)
+                let data_clone = data.clone();
+                let label = id.clone();
+                let app_clone = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    match app_clone.emit_to(&label, "notification-data", &data_clone) {
+                        Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
+                        Err(e) => log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e),
+                    }
+                });
             }
-            // Also emit event as backup (frontend primarily uses invoke)
-            let data_clone = data.clone();
-            let label = id.clone();
-            let app_clone = app.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                let _ = app_clone.emit_to(&label, "notification-data", &data_clone);
-            });
+            Err(e) => {
+                log::debug!("[NOTIFY] Window creation FAILED: id={}, err={}", id, e);
+                // Rollback: remove from notifications list
+                let mut mgr = state.lock().unwrap();
+                mgr.notifications.retain(|n| n.id != id);
+            }
         }
     }
 }
 
 pub fn close_notification(app: &AppHandle, state: &NotificationManagerState, id: &str) {
-    eprintln!("[DEBUG] close_notification called: id={}", id);
+    log::debug!("[DEBUG] close_notification called: id={}", id);
     let mut mgr = state.lock().unwrap();
     mgr.notifications.retain(|n| n.id != id);
     let remaining: Vec<NotificationData> = mgr.notifications.clone();
@@ -192,13 +214,13 @@ pub fn close_notification(app: &AppHandle, state: &NotificationManagerState, id:
 
     // Close the window
     if let Some(win) = app.get_webview_window(id) {
-        eprintln!("[DEBUG] closing window: id={}", id);
+        log::debug!("[DEBUG] closing window: id={}", id);
         match win.destroy() {
-            Ok(_) => eprintln!("[DEBUG] window closed ok: id={}", id),
-            Err(e) => eprintln!("[DEBUG] window close failed: id={}, err={}", id, e),
+            Ok(_) => log::debug!("[DEBUG] window closed ok: id={}", id),
+            Err(e) => log::debug!("[DEBUG] window close failed: id={}, err={}", id, e),
         }
     } else {
-        eprintln!("[DEBUG] window not found: id={}", id);
+        log::debug!("[DEBUG] window not found: id={}", id);
     }
 
     // Reposition remaining notifications
@@ -308,7 +330,7 @@ pub fn on_foreground_changed(
         .collect();
     drop(mgr);
     if !to_close.is_empty() {
-        eprintln!(
+        log::debug!(
             "[DEBUG] on_foreground_changed: focused_hwnd={}, closing={:?}",
             focused_hwnd, to_close
         );
