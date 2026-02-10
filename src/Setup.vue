@@ -39,9 +39,9 @@ function toggleTheme() {
 const config = ref<HookConfig>({
   stop_enabled: true,
   stop_message: "작업이 완료되었습니다",
-  notification_permission_enabled: true,
+  notification_permission_enabled: false,
   notification_permission_message: "권한 승인이 필요합니다",
-  notification_elicitation_enabled: true,
+  notification_elicitation_enabled: false,
   notification_elicitation_message: "입력이 필요합니다",
   notification_idle_enabled: false,
   notification_idle_message: "입력을 기다리고 있습니다",
@@ -63,7 +63,7 @@ const config = ref<HookConfig>({
   post_tool_use_message: "도구 실행이 완료되었습니다",
   post_tool_use_failure_enabled: false,
   post_tool_use_failure_message: "도구 실행이 실패했습니다",
-  permission_request_enabled: false,
+  permission_request_enabled: true,
   permission_request_message: "권한 요청이 발생했습니다",
   subagent_start_enabled: false,
   subagent_start_message: "서브에이전트가 시작되었습니다",
@@ -164,11 +164,11 @@ function onReset() {
   config.value = {
     stop_enabled: true,
     stop_message: t("defaults.stop_message"),
-    notification_permission_enabled: true,
+    notification_permission_enabled: false,
     notification_permission_message: t(
       "defaults.notification_permission_message",
     ),
-    notification_elicitation_enabled: true,
+    notification_elicitation_enabled: false,
     notification_elicitation_message: t(
       "defaults.notification_elicitation_message",
     ),
@@ -192,7 +192,7 @@ function onReset() {
     post_tool_use_message: t("defaults.post_tool_use_message"),
     post_tool_use_failure_enabled: false,
     post_tool_use_failure_message: t("defaults.post_tool_use_failure_message"),
-    permission_request_enabled: false,
+    permission_request_enabled: true,
     permission_request_message: t("defaults.permission_request_message"),
     subagent_start_enabled: false,
     subagent_start_message: t("defaults.subagent_start_message"),

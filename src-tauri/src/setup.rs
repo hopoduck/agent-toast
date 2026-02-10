@@ -8,6 +8,9 @@ pub struct HookConfig {
     // 권장 항목
     pub stop_enabled: bool,
     pub stop_message: String,
+    pub permission_request_enabled: bool,
+    pub permission_request_message: String,
+    // Notification 훅
     pub notification_permission_enabled: bool,
     pub notification_permission_message: String,
     pub notification_elicitation_enabled: bool,
@@ -28,8 +31,6 @@ pub struct HookConfig {
     pub user_prompt_submit_enabled: bool,
     pub user_prompt_submit_message: String,
     // 도구 실행 흐름
-    pub permission_request_enabled: bool,
-    pub permission_request_message: String,
     pub pre_tool_use_enabled: bool,
     pub pre_tool_use_message: String,
     pub post_tool_use_enabled: bool,
@@ -101,9 +102,12 @@ impl Default for HookConfig {
             // 권장 항목
             stop_enabled: true,
             stop_message: "작업이 완료되었습니다".into(),
-            notification_permission_enabled: true,
+            permission_request_enabled: true,
+            permission_request_message: "권한 요청이 발생했습니다".into(),
+            // Notification 훅
+            notification_permission_enabled: false,
             notification_permission_message: "권한 승인이 필요합니다".into(),
-            notification_elicitation_enabled: true,
+            notification_elicitation_enabled: false,
             notification_elicitation_message: "입력이 필요합니다".into(),
             // 세션 생명주기
             setup_enabled: false,
@@ -121,8 +125,6 @@ impl Default for HookConfig {
             user_prompt_submit_enabled: false,
             user_prompt_submit_message: "프롬프트가 제출되었습니다".into(),
             // 도구 실행 흐름
-            permission_request_enabled: false,
-            permission_request_message: "권한 요청이 발생했습니다".into(),
             pre_tool_use_enabled: false,
             pre_tool_use_message: "도구 실행이 시작됩니다".into(),
             post_tool_use_enabled: false,
@@ -1075,8 +1077,9 @@ mod tests {
     fn hook_config_default_values() {
         let config = HookConfig::default();
         assert!(config.stop_enabled);
-        assert!(config.notification_permission_enabled);
-        assert!(config.notification_elicitation_enabled);
+        assert!(config.permission_request_enabled);
+        assert!(!config.notification_permission_enabled);
+        assert!(!config.notification_elicitation_enabled);
         assert!(!config.notification_idle_enabled);
         assert!(!config.session_start_enabled);
         assert!(!config.session_end_enabled);

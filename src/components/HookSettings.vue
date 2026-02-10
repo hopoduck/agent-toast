@@ -24,25 +24,26 @@ onMounted(async () => {
 const hooks = [
   // 권장 항목
   { key: 'stop', recommended: true },
-  { key: 'notification_permission', recommended: true },
-  { key: 'notification_elicitation', recommended: true },
+  { key: 'permission_request', recommended: true },
   // 세션 생명주기
   { key: 'setup', recommended: false },
   { key: 'session_start', recommended: false },
   { key: 'session_end', recommended: false },
-  // 서브에이전트 생명주기
-  { key: 'subagent_start', recommended: false },
-  { key: 'subagent_stop', recommended: false },
   // 사용자 입력
   { key: 'user_prompt_submit', recommended: false },
   // 도구 실행 흐름
-  { key: 'permission_request', recommended: false },
   { key: 'pre_tool_use', recommended: false },
   { key: 'post_tool_use', recommended: false },
   { key: 'post_tool_use_failure', recommended: false },
+  // 서브에이전트 생명주기
+  { key: 'subagent_start', recommended: false },
+  { key: 'subagent_stop', recommended: false },
+  // Notification 훅
+  { key: 'notification_permission', recommended: false },
+  { key: 'notification_elicitation', recommended: false },
+  { key: 'notification_idle', recommended: false },
   // 기타
   { key: 'pre_compact', recommended: false },
-  { key: 'notification_idle', recommended: false },
 ] as const;
 </script>
 
