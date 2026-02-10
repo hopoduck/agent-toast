@@ -92,8 +92,8 @@
   --event-default-to: oklch(0.55 0.2 285);
   --event-success: oklch(0.765 0.17 162);
   --event-success-deep: oklch(0.7 0.17 162);
-  --event-warning: oklch(0.82 0.16 84);
-  --event-warning-deep: oklch(0.76 0.16 84);
+  --event-warning: oklch(0.55 0.19 55);
+  --event-warning-deep: oklch(0.48 0.19 55);
   --event-error: oklch(0.7 0.19 22);
   --event-error-deep: oklch(0.64 0.19 22);
   --event-codex: oklch(0.765 0.17 150);

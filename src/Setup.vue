@@ -268,29 +268,29 @@ async function onClose() {
       <!-- Path mismatch warning -->
       <Card
         v-if="exePathMismatch"
-        class="border-event-warning/25 bg-event-warning/10 gap-1 py-3"
+        class="border-event-warning/40 bg-event-warning/8 gap-1 py-3"
       >
         <CardContent class="flex flex-col gap-1 text-xs text-event-warning">
           <strong class="text-[13px]">{{
             $t("setup.path_mismatch_title")
           }}</strong>
-          <p class="text-event-warning/70 text-sm">
+          <p class="text-event-warning/85 text-sm">
             {{ $t("setup.path_mismatch_desc") }}
           </p>
           <div class="flex flex-col gap-0.5 text-[11px]">
             <div>
-              <span class="text-event-warning/50">{{
+              <span class="text-event-warning/70">{{
                 $t("setup.path_saved")
               }}</span>
-              <code class="text-foreground/60 break-all">{{
+              <code class="text-foreground/70 break-all">{{
                 savedExePath
               }}</code>
             </div>
             <div>
-              <span class="text-event-warning/50">{{
+              <span class="text-event-warning/70">{{
                 $t("setup.path_current")
               }}</span>
-              <code class="text-foreground/60 break-all">{{ exePath }}</code>
+              <code class="text-foreground/70 break-all">{{ exePath }}</code>
             </div>
           </div>
         </CardContent>
