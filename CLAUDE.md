@@ -21,12 +21,13 @@ pnpm build                  # vue-tsc --noEmit (type check) + vite build (fronte
 
 ```bash
 # Rust
-cd src-tauri && cargo fmt          # Code formatting
-cd src-tauri && cargo fmt --check  # Format check (for CI)
-cd src-tauri && cargo clippy       # Lint check
+cd src-tauri && cargo fmt                   # Code formatting
+cd src-tauri && cargo fmt --check           # Format check
+cd src-tauri && cargo clippy --all-targets  # Lint check (includes tests)
+cd src-tauri && cargo test                  # Run tests
 
 # TypeScript
-pnpm vue-tsc --noEmit              # Type check only
+pnpm vue-tsc --noEmit                       # Type check only
 ```
 
 ## Architecture
