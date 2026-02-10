@@ -527,23 +527,6 @@ mod tests {
         assert!(third.is_none());
     }
 
-    // ── Constants tests ──
-
-    #[test]
-    fn notification_dimensions_are_positive() {
-        assert!(NOTIFICATION_WIDTH > 0.0);
-        assert!(NOTIFICATION_HEIGHT > 0.0);
-        assert!(NOTIFICATION_MARGIN >= 0.0);
-    }
-
-    #[test]
-    fn notification_dimensions_reasonable() {
-        // 알림 창 크기가 합리적인 범위인지 확인 (상수 문서 참조)
-        assert!(NOTIFICATION_WIDTH >= 200.0 && NOTIFICATION_WIDTH <= 600.0);
-        assert!(NOTIFICATION_HEIGHT >= 80.0 && NOTIFICATION_HEIGHT <= 300.0);
-        assert!(NOTIFICATION_MARGIN >= 0.0 && NOTIFICATION_MARGIN <= 50.0);
-    }
-
     // ── Stacking calculation tests ──
 
     #[test]

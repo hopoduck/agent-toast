@@ -1335,10 +1335,12 @@ mod tests {
 
     #[test]
     fn hook_config_all_hooks_disabled() {
-        let mut config = HookConfig::default();
-        config.stop_enabled = false;
-        config.notification_permission_enabled = false;
-        config.notification_elicitation_enabled = false;
+        let config = HookConfig {
+            stop_enabled: false,
+            notification_permission_enabled: false,
+            notification_elicitation_enabled: false,
+            ..Default::default()
+        };
 
         assert!(!config.stop_enabled);
         assert!(!config.notification_permission_enabled);
@@ -1348,8 +1350,10 @@ mod tests {
     #[test]
     fn hook_config_locale_values() {
         for locale in ["ko", "en"] {
-            let mut config = HookConfig::default();
-            config.locale = locale.to_string();
+            let config = HookConfig {
+                locale: locale.to_string(),
+                ..Default::default()
+            };
             let json = serde_json::to_string(&config).unwrap();
             let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(deserialized.locale, locale);
@@ -1360,8 +1364,10 @@ mod tests {
     fn hook_config_notification_positions() {
         let positions = ["bottom_right", "bottom_left", "top_right", "top_left"];
         for pos in positions {
-            let mut config = HookConfig::default();
-            config.notification_position = pos.to_string();
+            let config = HookConfig {
+                notification_position: pos.to_string(),
+                ..Default::default()
+            };
             let json = serde_json::to_string(&config).unwrap();
             let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(deserialized.notification_position, pos);
@@ -1371,8 +1377,10 @@ mod tests {
     #[test]
     fn hook_config_auto_dismiss_values() {
         for seconds in [0, 5, 10, 30, 60, 300] {
-            let mut config = HookConfig::default();
-            config.auto_dismiss_seconds = seconds;
+            let config = HookConfig {
+                auto_dismiss_seconds: seconds,
+                ..Default::default()
+            };
             let json = serde_json::to_string(&config).unwrap();
             let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(deserialized.auto_dismiss_seconds, seconds);
@@ -1382,8 +1390,10 @@ mod tests {
     #[test]
     fn hook_config_title_display_modes() {
         for mode in ["project", "window"] {
-            let mut config = HookConfig::default();
-            config.title_display_mode = mode.to_string();
+            let config = HookConfig {
+                title_display_mode: mode.to_string(),
+                ..Default::default()
+            };
             let json = serde_json::to_string(&config).unwrap();
             let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(deserialized.title_display_mode, mode);
@@ -1394,8 +1404,10 @@ mod tests {
     fn hook_config_monitor_values() {
         let monitors = ["primary", "0", "1", "2"];
         for monitor in monitors {
-            let mut config = HookConfig::default();
-            config.notification_monitor = monitor.to_string();
+            let config = HookConfig {
+                notification_monitor: monitor.to_string(),
+                ..Default::default()
+            };
             let json = serde_json::to_string(&config).unwrap();
             let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(deserialized.notification_monitor, monitor);
@@ -1404,12 +1416,12 @@ mod tests {
 
     #[test]
     fn hook_config_boolean_fields() {
-        let mut config = HookConfig::default();
-
-        // Toggle all boolean fields
-        config.auto_close_on_focus = false;
-        config.notification_sound = false;
-        config.codex_enabled = true;
+        let config = HookConfig {
+            auto_close_on_focus: false,
+            notification_sound: false,
+            codex_enabled: true,
+            ..Default::default()
+        };
 
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
@@ -1519,7 +1531,8 @@ mod tests {
         let config = parse_hook_config_from_json(json);
         // 테스트 환경에서는 codex가 설치되어 있지 않을 가능성이 높음
         // 값 자체보다 파싱이 실패하지 않는지 확인
-        assert!(config.codex_enabled == true || config.codex_enabled == false);
+        // 파싱이 실패하지 않는지만 확인 (codex 설치 여부에 따라 값이 달라짐)
+        let _ = config.codex_enabled;
     }
 
     // ── build_hook_entry variations ──
