@@ -15,20 +15,26 @@ pnpm install                # Install dependencies
 pnpm tauri dev              # Full dev mode with Vite hot reload (port 1420)
 pnpm tauri build            # Production build → src-tauri/target/release/agent-toast.exe
 pnpm build                  # vue-tsc --noEmit (type check) + vite build (frontend only)
+pnpm release                # Release build with updater artifacts (requires TAURI_SIGNING_PRIVATE_KEY in .env)
 ```
 
 ### Lint & Format
 
 ```bash
 # Rust
-cd src-tauri && cargo fmt                   # Code formatting
-cd src-tauri && cargo fmt --check           # Format check
-cd src-tauri && cargo clippy --all-targets  # Lint check (includes tests)
-cd src-tauri && cargo test                  # Run tests
+cd src-tauri && cargo fmt                                  # Code formatting
+cd src-tauri && cargo fmt --check                          # Format check
+cd src-tauri && cargo clippy --all-targets -- -D warnings  # Lint check (CI enforces -D warnings)
+cd src-tauri && cargo test                                 # Run all tests
+cd src-tauri && cargo test <test_name>                     # Run a specific test
 
 # TypeScript
-pnpm vue-tsc --noEmit                       # Type check only
+pnpm vue-tsc --noEmit                                      # Type check only
 ```
+
+### CI Checks (GitHub Actions)
+
+On push/PR to `master`, the `check.yml` workflow runs: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, and `pnpm vue-tsc --noEmit`. All must pass before merge.
 
 ## Architecture
 
@@ -72,7 +78,6 @@ Single `index.html` + `main.ts` serves both notification and setup windows. Wind
 - **FR-3**: auto-close on focus return via `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` + mpsc channel
 - **Window activation**: uses `SendInput` Alt-key simulation to bypass `SetForegroundWindow` restriction; restores minimized windows via `IsIconic` check
 
-
 ### Thread Model
 
 - Main thread: Tauri runtime + GUI event loop
@@ -111,6 +116,7 @@ Events: `task_complete`, `user_input_required`, `error`
 ### App Config (src-tauri/)
 
 - `tauri.conf.json`: Tauri app settings (window size, permissions, build config)
+- `tauri.release.conf.json`: Release-only overrides (enables `createUpdaterArtifacts`)
 - `capabilities/default.json`: Default Tauri permission settings
 
 ### User Settings
