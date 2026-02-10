@@ -226,4 +226,217 @@ mod tests {
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
         assert_eq!(decoded.message.as_deref(), Some(msg));
     }
+
+    #[test]
+    fn wire_format_large_payload() {
+        let long_message = "A".repeat(10000);
+        let req = NotifyRequest {
+            pid: 1,
+            event: "task_complete".to_string(),
+            message: Some(long_message.clone()),
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+
+        let data = serde_json::to_vec(&req).unwrap();
+        let len_bytes = (data.len() as u32).to_le_bytes();
+        let received_len = u32::from_le_bytes(len_bytes) as usize;
+
+        assert_eq!(received_len, data.len());
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.message.as_deref(), Some(long_message.as_str()));
+    }
+
+    #[test]
+    fn wire_format_with_source_field() {
+        for source in ["claude", "codex", "updater"] {
+            let req = NotifyRequest {
+                pid: 1,
+                event: "test".to_string(),
+                message: None,
+                title_hint: None,
+                process_tree: None,
+                source: source.into(),
+            };
+
+            let data = serde_json::to_vec(&req).unwrap();
+            let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+            assert_eq!(decoded.source, source);
+        }
+    }
+
+    #[test]
+    fn wire_format_all_fields_populated() {
+        let req = NotifyRequest {
+            pid: 99999,
+            event: "user_input_required".to_string(),
+            message: Some("권한 승인이 필요합니다".to_string()),
+            title_hint: Some("my-awesome-project".to_string()),
+            process_tree: Some(vec![1000, 2000, 3000, 4000, 5000]),
+            source: "claude".into(),
+        };
+
+        let data = serde_json::to_vec(&req).unwrap();
+        let len_bytes = (data.len() as u32).to_le_bytes();
+
+        // 프레임 조립
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&len_bytes);
+        frame.extend_from_slice(&data);
+
+        // 수신 측 디코딩
+        let received_len = u32::from_le_bytes(frame[0..4].try_into().unwrap()) as usize;
+        let decoded: NotifyRequest = serde_json::from_slice(&frame[4..4 + received_len]).unwrap();
+
+        assert_eq!(decoded.pid, 99999);
+        assert_eq!(decoded.event, "user_input_required");
+        assert_eq!(decoded.message.as_deref(), Some("권한 승인이 필요합니다"));
+        assert_eq!(decoded.title_hint.as_deref(), Some("my-awesome-project"));
+        assert_eq!(decoded.process_tree, Some(vec![1000, 2000, 3000, 4000, 5000]));
+        assert_eq!(decoded.source, "claude");
+    }
+
+    #[test]
+    fn wire_format_empty_message_string() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: Some("".to_string()),
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.message.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn wire_format_special_characters_in_message() {
+        let special_msg = r#"Line1\nLine2\tTab "quoted" 'single' <tag> & symbol"#;
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: Some(special_msg.to_string()),
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.message.as_deref(), Some(special_msg));
+    }
+
+    #[test]
+    fn wire_format_length_prefix_byte_order() {
+        // 리틀 엔디안 바이트 순서 확인
+        let req = NotifyRequest {
+            pid: 1,
+            event: "x".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+
+        let data = serde_json::to_vec(&req).unwrap();
+        let len = data.len() as u32;
+        let len_bytes = len.to_le_bytes();
+
+        // 리틀 엔디안: 최하위 바이트가 먼저
+        assert_eq!(len_bytes[0], (len & 0xFF) as u8);
+        assert_eq!(len_bytes[1], ((len >> 8) & 0xFF) as u8);
+        assert_eq!(len_bytes[2], ((len >> 16) & 0xFF) as u8);
+        assert_eq!(len_bytes[3], ((len >> 24) & 0xFF) as u8);
+    }
+
+    #[test]
+    fn wire_format_max_reasonable_size() {
+        // 100KB 페이로드 테스트
+        let big_tree: Vec<u32> = (0..10000).collect();
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: Some("A".repeat(50000)),
+            title_hint: Some("B".repeat(1000)),
+            process_tree: Some(big_tree),
+            source: "claude".into(),
+        };
+
+        let data = serde_json::to_vec(&req).unwrap();
+        let len = data.len() as u32;
+
+        // 길이가 u32 범위 내인지 확인
+        assert!(len < u32::MAX);
+
+        // 디코딩 가능한지 확인
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.pid, 1);
+        assert!(decoded.process_tree.is_some());
+        assert_eq!(decoded.process_tree.as_ref().unwrap().len(), 10000);
+    }
+
+    // ── Pipe name tests ──
+
+    #[test]
+    fn pipe_name_has_valid_format() {
+        // Windows named pipe must start with \\.\pipe\
+        assert!(PIPE_NAME.starts_with(r"\\.\pipe\"));
+    }
+
+    #[test]
+    fn pipe_name_contains_app_identifier() {
+        assert!(PIPE_NAME.contains("agent-toast"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn pipe_name_debug_has_dev_suffix() {
+        assert!(PIPE_NAME.ends_with("-dev"));
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn pipe_name_release_no_dev_suffix() {
+        assert!(!PIPE_NAME.ends_with("-dev"));
+    }
+
+    // ── Frame encoding edge cases ──
+
+    #[test]
+    fn wire_format_zero_length_would_be_invalid_json() {
+        // 길이가 0인 프레임은 빈 JSON이 아닌 파싱 실패를 야기함
+        let empty_data: &[u8] = &[];
+        let result = serde_json::from_slice::<NotifyRequest>(empty_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn wire_format_partial_json_fails() {
+        // 불완전한 JSON은 파싱 실패
+        let partial = br#"{"pid":1,"event":"#;
+        let result = serde_json::from_slice::<NotifyRequest>(partial);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn wire_format_extra_fields_ignored() {
+        // 알려지지 않은 필드는 무시됨 (forward compatibility)
+        let json = r#"{"pid":1,"event":"test","unknown_field":"value","future_field":123}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.pid, 1);
+        assert_eq!(req.event, "test");
+    }
+
+    #[test]
+    fn wire_format_null_optional_fields() {
+        // null 값은 None으로 처리됨
+        let json = r#"{"pid":1,"event":"test","message":null,"title_hint":null}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert!(req.message.is_none());
+        assert!(req.title_hint.is_none());
+    }
 }

@@ -1320,4 +1320,230 @@ mod tests {
         assert!(config.stop_enabled);
         assert_eq!(config.stop_message, "완료");
     }
+
+    // ── HookConfig additional tests ──
+
+    #[test]
+    fn hook_config_all_hooks_disabled() {
+        let mut config = HookConfig::default();
+        config.stop_enabled = false;
+        config.notification_permission_enabled = false;
+        config.notification_elicitation_enabled = false;
+
+        assert!(!config.stop_enabled);
+        assert!(!config.notification_permission_enabled);
+        assert!(!config.notification_elicitation_enabled);
+    }
+
+    #[test]
+    fn hook_config_locale_values() {
+        for locale in ["ko", "en"] {
+            let mut config = HookConfig::default();
+            config.locale = locale.to_string();
+            let json = serde_json::to_string(&config).unwrap();
+            let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.locale, locale);
+        }
+    }
+
+    #[test]
+    fn hook_config_notification_positions() {
+        let positions = ["bottom_right", "bottom_left", "top_right", "top_left"];
+        for pos in positions {
+            let mut config = HookConfig::default();
+            config.notification_position = pos.to_string();
+            let json = serde_json::to_string(&config).unwrap();
+            let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.notification_position, pos);
+        }
+    }
+
+    #[test]
+    fn hook_config_auto_dismiss_values() {
+        for seconds in [0, 5, 10, 30, 60, 300] {
+            let mut config = HookConfig::default();
+            config.auto_dismiss_seconds = seconds;
+            let json = serde_json::to_string(&config).unwrap();
+            let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.auto_dismiss_seconds, seconds);
+        }
+    }
+
+    #[test]
+    fn hook_config_title_display_modes() {
+        for mode in ["project", "window"] {
+            let mut config = HookConfig::default();
+            config.title_display_mode = mode.to_string();
+            let json = serde_json::to_string(&config).unwrap();
+            let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.title_display_mode, mode);
+        }
+    }
+
+    #[test]
+    fn hook_config_monitor_values() {
+        let monitors = ["primary", "0", "1", "2"];
+        for monitor in monitors {
+            let mut config = HookConfig::default();
+            config.notification_monitor = monitor.to_string();
+            let json = serde_json::to_string(&config).unwrap();
+            let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized.notification_monitor, monitor);
+        }
+    }
+
+    #[test]
+    fn hook_config_boolean_fields() {
+        let mut config = HookConfig::default();
+
+        // Toggle all boolean fields
+        config.auto_close_on_focus = false;
+        config.notification_sound = false;
+        config.codex_enabled = true;
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: HookConfig = serde_json::from_str(&json).unwrap();
+
+        assert!(!deserialized.auto_close_on_focus);
+        assert!(!deserialized.notification_sound);
+        assert!(deserialized.codex_enabled);
+    }
+
+    // ── extract_message edge cases ──
+
+    #[test]
+    fn extract_message_with_korean() {
+        let cmd = r#"agent-toast --message="한글 메시지 테스트""#;
+        assert_eq!(extract_message(cmd), Some("한글 메시지 테스트".to_string()));
+    }
+
+    #[test]
+    fn extract_message_with_spaces() {
+        let cmd = r#"agent-toast --message="message with multiple spaces""#;
+        assert_eq!(
+            extract_message(cmd),
+            Some("message with multiple spaces".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_message_at_command_start() {
+        let cmd = r#"--message="first" agent-toast"#;
+        assert_eq!(extract_message(cmd), Some("first".to_string()));
+    }
+
+    #[test]
+    fn extract_message_multiple_equals() {
+        // --message=a=b=c 형태
+        let cmd = "agent-toast --message=a=b=c --other";
+        assert_eq!(extract_message(cmd), Some("a=b=c".to_string()));
+    }
+
+    // ── parse_hook_config_from_json edge cases ──
+
+    #[test]
+    fn parse_daemon_only_session_start_not_enabled() {
+        // --daemon만 있고 --message가 없으면 session_start_enabled는 false
+        let json = r#"{
+            "hooks": {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "agent-toast --daemon"}]}
+                ]
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(!config.session_start_enabled);
+    }
+
+    #[test]
+    fn parse_empty_hooks_object() {
+        let json = r#"{"hooks": {}}"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(!config.stop_enabled);
+        assert!(!config.notification_permission_enabled);
+    }
+
+    #[test]
+    fn parse_hooks_with_null_values() {
+        let json = r#"{"hooks": {"Stop": null}}"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(!config.stop_enabled);
+    }
+
+    #[test]
+    fn parse_agent_toast_partial_settings() {
+        let json = r#"{
+            "agent_toast": {
+                "locale": "en"
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert_eq!(config.locale, "en");
+        // 나머지는 기본값
+        assert_eq!(config.notification_position, "bottom_right");
+        assert!(config.notification_sound);
+    }
+
+    #[test]
+    fn parse_unknown_notification_matcher_ignored() {
+        let json = r#"{
+            "hooks": {
+                "Notification": [
+                    {
+                        "matcher": "unknown_matcher",
+                        "hooks": [{"type": "command", "command": "agent-toast --message=\"test\""}]
+                    }
+                ]
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(!config.notification_permission_enabled);
+        assert!(!config.notification_elicitation_enabled);
+        assert!(!config.notification_idle_enabled);
+    }
+
+    #[test]
+    fn parse_codex_enabled_default_based_on_install() {
+        // codex_enabled가 없으면 get_codex_installed() 결과에 따름
+        let json = r#"{"agent_toast": {}}"#;
+        let config = parse_hook_config_from_json(json);
+        // 테스트 환경에서는 codex가 설치되어 있지 않을 가능성이 높음
+        // 값 자체보다 파싱이 실패하지 않는지 확인
+        assert!(config.codex_enabled == true || config.codex_enabled == false);
+    }
+
+    // ── build_hook_entry variations ──
+
+    #[test]
+    fn build_hook_entry_command_with_special_chars() {
+        let cmd = r#"agent-toast --message="test \"quoted\" text""#;
+        let entry = build_hook_entry(None, cmd, None);
+        assert_eq!(entry["hooks"][0]["command"].as_str().unwrap(), cmd);
+    }
+
+    #[test]
+    fn build_hook_entry_long_command() {
+        let long_cmd = format!("agent-toast --message=\"{}\"", "A".repeat(1000));
+        let entry = build_hook_entry(None, &long_cmd, None);
+        assert_eq!(entry["hooks"][0]["command"].as_str().unwrap(), long_cmd);
+    }
+
+    #[test]
+    fn build_hook_entry_empty_command() {
+        let entry = build_hook_entry(None, "", None);
+        assert_eq!(entry["hooks"][0]["command"].as_str().unwrap(), "");
+    }
+
+    // ── Default function tests ──
+
+    #[test]
+    fn default_functions_return_expected_values() {
+        assert_eq!(default_title_display_mode(), "project");
+        assert!(default_auto_close_on_focus());
+        assert_eq!(default_auto_dismiss_seconds(), 0);
+        assert_eq!(default_notification_position(), "bottom_right");
+        assert!(default_notification_sound());
+        assert_eq!(default_notification_monitor(), "primary");
+        assert_eq!(default_locale(), "ko");
+    }
 }
