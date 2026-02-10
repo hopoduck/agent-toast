@@ -8,7 +8,7 @@ pub mod win32;
 
 use log::LevelFilter;
 use simplelog::{CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger, ColorChoice};
-use std::fs::File;
+use std::fs::OpenOptions;
 
 use cli::NotifyRequest;
 use notification::{
@@ -153,7 +153,11 @@ pub fn open_setup_window_with_tab(app: &AppHandle, tab: Option<&str>) {
 pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
     // Initialize logging to temp file + terminal
     let log_path = std::env::temp_dir().join("agent-toast.log");
-    let log_file = File::create(&log_path).ok();
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok();
 
     let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = vec![
         TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Stderr, ColorChoice::Auto),
