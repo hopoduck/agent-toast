@@ -243,10 +243,8 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check Stop hooks
     if let Some(stop_arr) = hooks["Stop"].as_array() {
         for entry in stop_arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.stop_enabled = true;
-                // Extract message from --message="..."
                 if let Some(msg) = extract_message(cmd) {
                     config.stop_message = msg;
                 }
@@ -258,10 +256,9 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     if let Some(notif_arr) = hooks["Notification"].as_array() {
         for entry in notif_arr {
             let matcher = entry["matcher"].as_str().unwrap_or("");
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if !cmd.contains("agent-toast") {
+            let Some(cmd) = extract_agent_toast_cmd(entry) else {
                 continue;
-            }
+            };
             match matcher {
                 "permission_prompt" => {
                     config.notification_permission_enabled = true;
@@ -291,11 +288,12 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // --message entries indicate notification enabled
     if let Some(ss_arr) = hooks["SessionStart"].as_array() {
         for entry in ss_arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") && extract_message(cmd).is_some() {
-                config.session_start_enabled = true;
-                if let Some(msg) = extract_message(cmd) {
-                    config.session_start_message = msg;
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
+                if extract_message(cmd).is_some() {
+                    config.session_start_enabled = true;
+                    if let Some(msg) = extract_message(cmd) {
+                        config.session_start_message = msg;
+                    }
                 }
             }
         }
@@ -304,8 +302,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check SessionEnd hooks
     if let Some(arr) = hooks["SessionEnd"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.session_end_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.session_end_message = msg;
@@ -317,8 +314,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check SubagentStop hooks
     if let Some(arr) = hooks["SubagentStop"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.subagent_stop_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.subagent_stop_message = msg;
@@ -330,8 +326,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check PreCompact hooks
     if let Some(arr) = hooks["PreCompact"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.pre_compact_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.pre_compact_message = msg;
@@ -343,8 +338,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check Setup hooks
     if let Some(arr) = hooks["Setup"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.setup_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.setup_message = msg;
@@ -356,8 +350,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check UserPromptSubmit hooks
     if let Some(arr) = hooks["UserPromptSubmit"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.user_prompt_submit_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.user_prompt_submit_message = msg;
@@ -369,8 +362,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check PreToolUse hooks
     if let Some(arr) = hooks["PreToolUse"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.pre_tool_use_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.pre_tool_use_message = msg;
@@ -382,8 +374,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check PostToolUse hooks
     if let Some(arr) = hooks["PostToolUse"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.post_tool_use_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.post_tool_use_message = msg;
@@ -395,8 +386,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check PostToolUseFailure hooks
     if let Some(arr) = hooks["PostToolUseFailure"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.post_tool_use_failure_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.post_tool_use_failure_message = msg;
@@ -408,8 +398,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check PermissionRequest hooks
     if let Some(arr) = hooks["PermissionRequest"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.permission_request_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.permission_request_message = msg;
@@ -421,8 +410,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
     // Check SubagentStart hooks
     if let Some(arr) = hooks["SubagentStart"].as_array() {
         for entry in arr {
-            let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-            if cmd.contains("agent-toast") {
+            if let Some(cmd) = extract_agent_toast_cmd(entry) {
                 config.subagent_start_enabled = true;
                 if let Some(msg) = extract_message(cmd) {
                     config.subagent_start_message = msg;
@@ -453,7 +441,7 @@ pub fn is_hook_config_saved() -> bool {
     {
         return true;
     }
-    // Check if any hook event array contains a agent-toast command
+    // Check if any hook event array contains an agent-toast command
     for key in [
         "Stop",
         "Notification",
@@ -471,8 +459,7 @@ pub fn is_hook_config_saved() -> bool {
     ] {
         if let Some(arr) = hooks[key].as_array() {
             for entry in arr {
-                let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-                if cmd.contains("agent-toast") {
+                if is_agent_toast_entry(entry) {
                     return true;
                 }
             }
@@ -500,16 +487,14 @@ pub fn save_hook_config(
     let exe = exe_path_for_shell();
     let mut hooks = serde_json::Map::new();
 
-    // Preserve non-agent-toast hooks from existing config
+    // Preserve non-agent-toast hooks from existing config.
+    // Detect hooks registered by a different exe path and remove them.
     if let Some(existing_hooks) = root["hooks"].as_object() {
         for (event_name, entries) in existing_hooks {
             if let Some(arr) = entries.as_array() {
                 let filtered: Vec<&Value> = arr
                     .iter()
-                    .filter(|entry| {
-                        let cmd = entry["hooks"][0]["command"].as_str().unwrap_or("");
-                        !cmd.contains("agent-toast")
-                    })
+                    .filter(|entry| !is_agent_toast_entry(entry))
                     .collect();
                 if !filtered.is_empty() {
                     hooks.insert(
@@ -830,7 +815,8 @@ pub fn get_saved_exe_path() -> Option<String> {
                     // "path\to\exe.exe --event ..." 형태에서 경로 추출
                     if let Some(idx) = cmd.find(" --") {
                         let exe = cmd[..idx].trim().trim_matches('"');
-                        if exe.contains("agent-toast") {
+                        let lower = exe.to_lowercase();
+                        if lower.contains("agent-toast") || lower.contains("agent toast") {
                             return Some(exe.to_string());
                         }
                     }
@@ -967,6 +953,26 @@ pub fn get_codex_installed() -> bool {
     std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(exe_name).is_file()))
         .unwrap_or(false)
+}
+
+/// Extract the command string from a hook entry if it belongs to agent-toast.
+/// Uses case-insensitive matching and safe `.get()` access to handle both
+/// "agent-toast" (cargo name) and "Agent Toast" (productName / NSIS install).
+fn extract_agent_toast_cmd(entry: &Value) -> Option<&str> {
+    let hooks_arr = entry.get("hooks")?.as_array()?;
+    for hook in hooks_arr {
+        let cmd = hook.get("command")?.as_str()?;
+        let lower = cmd.to_lowercase();
+        if lower.contains("agent-toast") || lower.contains("agent toast") {
+            return Some(cmd);
+        }
+    }
+    None
+}
+
+/// Check if a hook entry belongs to agent-toast.
+fn is_agent_toast_entry(entry: &Value) -> bool {
+    extract_agent_toast_cmd(entry).is_some()
 }
 
 fn build_hook_entry(matcher: Option<&str>, command: &str, _timeout: Option<u32>) -> Value {
@@ -1536,6 +1542,51 @@ mod tests {
     fn build_hook_entry_empty_command() {
         let entry = build_hook_entry(None, "", None);
         assert_eq!(entry["hooks"][0]["command"].as_str().unwrap(), "");
+    }
+
+    // ── extract_agent_toast_cmd / is_agent_toast_entry tests ──
+
+    #[test]
+    fn agent_toast_entry_detected() {
+        let entry = build_hook_entry(None, "C:\\path\\agent-toast.exe --event stop", None);
+        assert!(is_agent_toast_entry(&entry));
+        assert_eq!(
+            extract_agent_toast_cmd(&entry).unwrap(),
+            "C:\\path\\agent-toast.exe --event stop"
+        );
+    }
+
+    #[test]
+    fn agent_toast_entry_case_insensitive() {
+        // "Agent Toast" (productName 형식) 도 감지
+        let entry = build_hook_entry(None, "C:\\path\\Agent Toast.exe --daemon", None);
+        assert!(is_agent_toast_entry(&entry));
+    }
+
+    #[test]
+    fn non_agent_toast_entry_not_detected() {
+        let entry = build_hook_entry(None, "some-other-tool --flag", None);
+        assert!(!is_agent_toast_entry(&entry));
+        assert!(extract_agent_toast_cmd(&entry).is_none());
+    }
+
+    #[test]
+    fn malformed_entry_not_detected() {
+        // "hooks" 키가 없는 구조
+        let entry = serde_json::json!({"command": "agent-toast --daemon"});
+        assert!(!is_agent_toast_entry(&entry));
+    }
+
+    #[test]
+    fn empty_hooks_array_not_detected() {
+        let entry = serde_json::json!({"hooks": []});
+        assert!(!is_agent_toast_entry(&entry));
+    }
+
+    #[test]
+    fn hooks_without_command_not_detected() {
+        let entry = serde_json::json!({"hooks": [{"type": "command"}]});
+        assert!(!is_agent_toast_entry(&entry));
     }
 
     // ── Default function tests ──
