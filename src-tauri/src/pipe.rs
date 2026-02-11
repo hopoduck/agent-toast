@@ -90,8 +90,23 @@ where
     // Read length prefix
     let mut len_buf = [0u8; 4];
     let mut bytes_read = 0u32;
-    unsafe { ReadFile(handle, Some(&mut len_buf), Some(&mut bytes_read), None) }
-        .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+    if let Err(e) =
+        unsafe { ReadFile(handle, Some(&mut len_buf), Some(&mut bytes_read), None) }
+    {
+        // Broken pipe = client connected and immediately disconnected
+        // (e.g., is_server_running() probe). Not a real error.
+        let is_broken_pipe = e.code()
+            == windows::Win32::Foundation::ERROR_BROKEN_PIPE.to_hresult();
+        unsafe {
+            let _ = DisconnectNamedPipe(handle);
+            let _ = CloseHandle(handle);
+        }
+        if is_broken_pipe {
+            log::debug!("[PIPE] Client disconnected without sending data");
+            return Ok(());
+        }
+        return Err(Box::new(e));
+    }
     let len = u32::from_le_bytes(len_buf) as usize;
 
     // Read payload
