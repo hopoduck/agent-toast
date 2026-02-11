@@ -90,13 +90,10 @@ where
     // Read length prefix
     let mut len_buf = [0u8; 4];
     let mut bytes_read = 0u32;
-    if let Err(e) =
-        unsafe { ReadFile(handle, Some(&mut len_buf), Some(&mut bytes_read), None) }
-    {
+    if let Err(e) = unsafe { ReadFile(handle, Some(&mut len_buf), Some(&mut bytes_read), None) } {
         // Broken pipe = client connected and immediately disconnected
         // (e.g., is_server_running() probe). Not a real error.
-        let is_broken_pipe = e.code()
-            == windows::Win32::Foundation::ERROR_BROKEN_PIPE.to_hresult();
+        let is_broken_pipe = e.code() == windows::Win32::Foundation::ERROR_BROKEN_PIPE.to_hresult();
         unsafe {
             let _ = DisconnectNamedPipe(handle);
             let _ = CloseHandle(handle);
