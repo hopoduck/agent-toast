@@ -1,3 +1,14 @@
+export interface NotificationData {
+  id: string;
+  window_title: string;
+  event_display: string;
+  message: string | null;
+  source_hwnd: number;
+  process_tree: number[];
+  auto_dismiss_seconds: number;
+  source: string;
+}
+
 export interface HookConfig {
   stop_enabled: boolean;
   stop_message: string;

@@ -8,19 +8,9 @@ import { computed, onMounted, ref, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import claudeLogo from "./assets/claude.svg";
 import openaiLogo from "./assets/openai.svg";
+import type { NotificationData } from "./types";
 
 const { t, locale } = useI18n();
-
-interface NotificationData {
-  id: string;
-  window_title: string;
-  event_display: string;
-  message: string | null;
-  source_hwnd: number;
-  process_tree: number[];
-  auto_dismiss_seconds: number;
-  source: string;
-}
 
 type EventType = "default" | "success" | "warning" | "error" | "codex";
 
