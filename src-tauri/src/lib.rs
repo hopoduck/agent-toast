@@ -153,6 +153,19 @@ pub fn open_setup_window_with_tab(app: &AppHandle, tab: Option<&str>) {
 pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
     // Initialize logging to temp file + terminal
     let log_path = std::env::temp_dir().join("agent-toast.log");
+
+    // Keep only the last half (by line count) if the log exceeds 1 MB
+    const MAX_LOG_SIZE: u64 = 1024 * 1024;
+    if let Ok(meta) = std::fs::metadata(&log_path) {
+        if meta.len() > MAX_LOG_SIZE {
+            if let Ok(content) = std::fs::read_to_string(&log_path) {
+                let lines: Vec<&str> = content.lines().collect();
+                let kept = lines[lines.len() / 2..].join("\n");
+                let _ = std::fs::write(&log_path, kept + "\n");
+            }
+        }
+    }
+
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
