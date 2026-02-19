@@ -23,10 +23,10 @@
 
 ## ✨ Features
 
-- **Event Notifications** - Task completion, user input required, errors, and more
-- **Auto Focus** - Click notification to switch to the terminal window
-- **Auto Dismiss on Focus** - Notification closes when terminal gets focus
-- **Multi-Monitor Support** - Display notifications on your preferred monitor
+- **Smart Notifications** - Click to activate terminal, auto-dismiss on focus return, skip if already focused
+- **15 Hook Events** - Task completion, permission requests, input waiting, session start/end, and more
+- **Multi-Monitor Support** - Display notifications on any corner of your preferred monitor with DPI scaling
+- **Notification Sound** - System alert sound so you never miss an event (toggleable in settings)
 - **Multilingual UI** - Korean/English support
 - **Auto Update** - New version notifications with one-click update
 
@@ -79,7 +79,9 @@ Enable desired events in the settings window to automatically register hooks.
 
 ## ⚙️ How It Works
 
-Agent Toast runs in the background as a Named Pipe server. When an event occurs in Claude Code or Codex CLI, a hook is triggered that sends a notification to Agent Toast. Clicking the notification traces the process tree to find and focus the original terminal window.
+- Single-instance management via Named Pipe — first launch starts the app, subsequent CLI calls send JSON through the pipe and exit immediately
+- Real-time focus detection via Win32 API for automatic notification dismissal
+- Process tree traversal from `--pid` for improved terminal window detection accuracy
 
 ## 🛠️ Tech Stack
 
