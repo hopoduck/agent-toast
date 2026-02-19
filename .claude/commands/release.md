@@ -57,10 +57,12 @@ Update version in these 3 files:
 2. `src-tauri/tauri.conf.json` - line 4: `"version": "x.x.x"`
 3. `package.json` - line 4: `"version": "x.x.x"`
 
+After updating, run `cargo check` in `src-tauri/` to regenerate `Cargo.lock` with the new version.
+
 ### Step 5: Commit and Tag
 
 ```bash
-git add src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
+git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json package.json
 git commit -m "chore: release v{new_version}"
 git tag v{new_version}
 ```
