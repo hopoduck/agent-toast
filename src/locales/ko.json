@@ -141,6 +141,7 @@
     "update_downloading": "다운로드 중... {percent}%",
     "update_restart": "재시작하여 적용",
     "update_error": "업데이트 오류: {msg}",
+    "update_manual": "자동 업데이트를 사용할 수 없습니다. GitHub에서 최신 버전을 다운로드해주세요.",
     "update_completed": "업데이트 완료",
     "update_completed_message": "v{version}(으)로 업데이트되었습니다!"
   },

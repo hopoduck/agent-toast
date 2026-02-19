@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { Check, ChevronRight, Circle, Pencil, X } from "lucide-vue-next";
@@ -67,10 +68,12 @@ const eventIcon = computed(() => eventIconMap[eventType.value]);
 
 const sourceLogo = computed(() => (isCodex.value ? openaiLogo : claudeLogo));
 
-const isUpdater = computed(() => notification.value?.source === "updater");
+const isUpdateAvailable = computed(
+  () => notification.value?.source === "updater" && notification.value?.event_display === "update_available",
+);
 
 const viewButtonText = computed(() =>
-  isUpdater.value ? t("notification.update") : t("notification.view"),
+  isUpdateAvailable.value ? t("notification.update") : t("notification.view"),
 );
 
 const eventStyles: Record<
@@ -165,10 +168,28 @@ onMounted(async () => {
 async function onView() {
   if (!notification.value) return;
 
-  // For update notifications, directly download and install
-  if (notification.value.source === "updater") {
+  // For update_completed notifications, open settings
+  if (notification.value.source === "updater" && !isUpdateAvailable.value) {
     const closeId = notification.value.id;
     show.value = false;
+    await invoke("open_settings", { tab: "about" });
+    setTimeout(async () => {
+      await invoke("close_notify", { id: closeId });
+    }, 200);
+    return;
+  }
+
+  // For update_available notifications, directly download and install
+  if (isUpdateAvailable.value) {
+    const closeId = notification.value.id;
+    show.value = false;
+
+    const portable = await invoke<boolean>("is_portable");
+    if (portable) {
+      await openUrl("https://github.com/hopoduck/agent-toast/releases/latest");
+      await invoke("close_notify", { id: closeId });
+      return;
+    }
 
     try {
       const update = await check();
@@ -177,8 +198,8 @@ async function onView() {
         await update.downloadAndInstall();
         await relaunch();
       }
-    } catch (e) {
-      console.error("Update failed:", e);
+    } catch {
+      await openUrl("https://github.com/hopoduck/agent-toast/releases/latest");
     }
 
     await invoke("close_notify", { id: closeId });

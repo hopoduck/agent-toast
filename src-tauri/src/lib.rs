@@ -51,6 +51,17 @@ fn is_dev_mode() -> bool {
 }
 
 #[tauri::command]
+fn is_portable() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return true;
+    };
+    let Some(dir) = exe.parent() else {
+        return true;
+    };
+    !dir.join("uninstall.exe").exists()
+}
+
+#[tauri::command]
 fn get_monitor_list() -> Vec<win32::MonitorInfo> {
     win32::get_monitor_list()
 }
@@ -187,6 +198,36 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
     }
     let _ = CombinedLogger::init(loggers);
 
+    // Capture panics from any thread into the log file before aborting
+    let panic_log_path = log_path.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown".to_string()
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let bt = std::backtrace::Backtrace::force_capture();
+        let msg = format!(
+            "[PANIC] {payload}\n  at {location}\n  thread: {:?}\n{bt}",
+            std::thread::current().name().unwrap_or("unnamed")
+        );
+        log::error!("{msg}");
+        // Also write directly to file in case the logger is broken
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&panic_log_path)
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "{msg}");
+        }
+    }));
+
     log::info!("=== Agent Toast Started === (log: {})", log_path.display());
 
     let mgr_state = notification::create_manager();
@@ -203,6 +244,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             test_notification,
             get_locale,
             is_dev_mode,
+            is_portable,
             open_settings,
             setup::get_hook_config,
             setup::save_hook_config,
@@ -293,12 +335,18 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
-            // Prevent app from exiting when all windows are closed (daemon mode)
-            if let RunEvent::ExitRequested { api, code, .. } = event {
+        .run(|_app, event| match event {
+            RunEvent::ExitRequested { api, code, .. } => {
+                log::warn!("[EXIT] ExitRequested: code={:?}", code);
                 if code.is_none() {
                     api.prevent_exit();
+                } else {
+                    log::error!("[EXIT] App exiting with code={:?}", code);
                 }
             }
+            RunEvent::Exit => {
+                log::warn!("[EXIT] App is shutting down (RunEvent::Exit)");
+            }
+            _ => {}
         });
 }

@@ -2,22 +2,25 @@
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { check, type Update } from "@tauri-apps/plugin-updater";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { computed, onMounted, ref } from "vue";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { toast } from "vue-sonner";
 import logoPng from "../assets/logo.png";
 
 const { t } = useI18n();
 const version = ref("...");
+const portable = ref(false);
 
 // Update state
-type UpdateStatus = "idle" | "checking" | "available" | "up-to-date" | "downloading" | "ready" | "error";
+type UpdateStatus = "idle" | "checking" | "available" | "up-to-date" | "downloading" | "ready";
 const updateStatus = ref<UpdateStatus>("idle");
-const updateInfo = ref<Update | null>(null);
+const updateInfo = shallowRef<Update | null>(null);
 const downloadProgress = ref(0);
-const errorMessage = ref("");
 
 const statusMessage = computed(() => {
   switch (updateStatus.value) {
@@ -31,16 +34,19 @@ const statusMessage = computed(() => {
       return t("about.update_downloading", { percent: downloadProgress.value });
     case "ready":
       return t("about.update_available", { version: updateInfo.value?.version ?? "" });
-    case "error":
-      return t("about.update_error", { msg: errorMessage.value });
     default:
       return "";
   }
 });
 
 async function checkForUpdates() {
+  if (portable.value) {
+    toast.info(t("about.update_manual"));
+    await openUrl("https://github.com/hopoduck/agent-toast/releases/latest");
+    return;
+  }
+
   updateStatus.value = "checking";
-  errorMessage.value = "";
 
   try {
     const update = await check();
@@ -50,9 +56,10 @@ async function checkForUpdates() {
     } else {
       updateStatus.value = "up-to-date";
     }
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-    updateStatus.value = "error";
+  } catch {
+    toast.info(t("about.update_manual"));
+    await openUrl("https://github.com/hopoduck/agent-toast/releases/latest");
+    updateStatus.value = "idle";
   }
 }
 
@@ -81,9 +88,10 @@ async function downloadAndInstall() {
       }
     });
     updateStatus.value = "ready";
-  } catch (e) {
-    errorMessage.value = e instanceof Error ? e.message : String(e);
-    updateStatus.value = "error";
+  } catch {
+    toast.info(t("about.update_manual"));
+    await openUrl("https://github.com/hopoduck/agent-toast/releases/latest");
+    updateStatus.value = "idle";
   }
 }
 
@@ -93,6 +101,7 @@ async function restartApp() {
 
 onMounted(async () => {
   version.value = await getVersion();
+  portable.value = await invoke<boolean>("is_portable");
 });
 </script>
 
@@ -130,8 +139,7 @@ onMounted(async () => {
         class="text-sm"
         :class="{
           'text-muted-foreground': updateStatus === 'checking' || updateStatus === 'up-to-date',
-          'text-green-600 dark:text-green-400': updateStatus === 'available' || updateStatus === 'ready',
-          'text-red-600 dark:text-red-400': updateStatus === 'error'
+          'text-green-600 dark:text-green-400': updateStatus === 'available' || updateStatus === 'ready'
         }"
       >
         {{ statusMessage }}
@@ -143,7 +151,7 @@ onMounted(async () => {
       <!-- Buttons -->
       <div class="flex gap-2">
         <Button
-          v-if="updateStatus === 'idle' || updateStatus === 'up-to-date' || updateStatus === 'error'"
+          v-if="updateStatus === 'idle' || updateStatus === 'up-to-date'"
           variant="outline"
           size="sm"
           @click="checkForUpdates"

@@ -139,6 +139,7 @@
     "update_download": "Download & Install",
     "update_restart": "Restart to Apply",
     "update_error": "Update error: {msg}",
+    "update_manual": "Auto-update is not available. Please download the latest version from GitHub.",
     "update_completed": "Update Complete",
     "update_completed_message": "Updated to v{version}!"
   },
