@@ -198,11 +198,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         ColorChoice::Auto,
     )];
     if let Some(file) = log_file {
-        loggers.push(WriteLogger::new(
-            LevelFilter::Debug,
-            log_config,
-            file,
-        ));
+        loggers.push(WriteLogger::new(LevelFilter::Debug, log_config, file));
     }
     let _ = CombinedLogger::init(loggers);
 

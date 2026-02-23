@@ -19,11 +19,11 @@ use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW,
 };
 #[cfg(windows)]
+use windows::Win32::System::Console::{AttachConsole, FreeConsole, GetConsoleWindow};
+#[cfg(windows)]
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
-#[cfg(windows)]
-use windows::Win32::System::Console::{AttachConsole, FreeConsole, GetConsoleWindow};
 #[cfg(windows)]
 use windows::Win32::UI::Accessibility::SetWinEventHook;
 #[cfg(windows)]

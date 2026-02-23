@@ -1,6 +1,6 @@
 [package]
 name = "agent-toast"
-version = "0.1.3"
+version = "0.1.4"
 description = "Smart notification for AI coding agents"
 authors = ["hopoduck"]
 edition = "2021"
