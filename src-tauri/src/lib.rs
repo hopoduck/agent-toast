@@ -7,7 +7,9 @@ mod updater;
 pub mod win32;
 
 use log::LevelFilter;
-use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
+use simplelog::{
+    ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
+};
 use std::fs::OpenOptions;
 
 use cli::NotifyRequest;
@@ -183,16 +185,22 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         .open(&log_path)
         .ok();
 
+    let mut log_builder = ConfigBuilder::new();
+    log_builder.set_time_format_rfc3339();
+    // Use local time if available, otherwise fall back to UTC
+    let _ = log_builder.set_time_offset_to_local();
+    let log_config = log_builder.build();
+
     let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = vec![TermLogger::new(
         LevelFilter::Debug,
-        Config::default(),
+        log_config.clone(),
         TerminalMode::Stderr,
         ColorChoice::Auto,
     )];
     if let Some(file) = log_file {
         loggers.push(WriteLogger::new(
             LevelFilter::Debug,
-            Config::default(),
+            log_config,
             file,
         ));
     }
