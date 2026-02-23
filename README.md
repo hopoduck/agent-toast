@@ -83,6 +83,26 @@ agent-toast.exe --setup
 - Win32 API로 포커스 변화를 실시간 감지하여 알림 자동 소멸 처리
 - 프로세스 트리 탐색으로 `--pid`에서 터미널 창 탐지 정확도 개선
 
+## 🔍 다른 알림 도구와 비교
+
+| | **Agent Toast** | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell 스크립트** | [**ntfy.sh**](https://ntfy.sh) |
+| --- | --- | --- | --- | --- | --- |
+| **알림 방식** | 커스텀 알림 창 | OS 네이티브 토스트 | OS 네이티브 토스트 | OS 네이티브 토스트 | HTTP 푸시 알림 |
+| **플랫폼** | Windows | Windows | Windows · macOS · Linux | Windows | 전체 (모바일 포함) |
+| **설치 방식** | 인스톨러 / 포터블 | CLI 바이너리 | CLI 바이너리 | 스크립트 복사 | curl 한 줄 |
+| **GUI 설정** | ✅ 설정 창 제공 | ❌ CLI만 | ❌ CLI만 | ❌ 수동 편집 | ❌ 수동 편집 |
+| **스마트 알림**¹ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **알림 클릭 → 터미널 활성화** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **멀티 모니터 · 위치 선택** | ✅ 4코너 + 모니터 선택 | ❌ | ❌ | ❌ | ❌ |
+| **DPI 스케일 대응** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **알림 사운드** | ✅ | ❌ | ✅ | ❌ | ✅ |
+| **자동 업데이트** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **모바일 알림** | ❌ | ✅ (ntfy 연동) | ❌ | ❌ | ✅ |
+| **다중 AI 도구 지원** | Claude Code · Codex CLI | Claude · Copilot · Gemini · Codex 등 | Claude Code | Claude Code | 범용 |
+| **언어** | Rust + TypeScript | C++ | Rust | PowerShell | Shell (curl) |
+
+> ¹ **스마트 알림**: 터미널이 이미 포커스 중이면 알림 생략 + 터미널 복귀 시 알림 자동 소멸
+
 ## 🛠️ 기술 스택
 
 <p>

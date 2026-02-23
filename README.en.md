@@ -83,6 +83,26 @@ Enable desired events in the settings window to automatically register hooks.
 - Real-time focus detection via Win32 API for automatic notification dismissal
 - Process tree traversal from `--pid` for improved terminal window detection accuracy
 
+## 🔍 Comparison with Other Notification Tools
+
+| | **Agent Toast** | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell Script** | [**ntfy.sh**](https://ntfy.sh) |
+| --- | --- | --- | --- | --- | --- |
+| **Notification Style** | Custom notification window | OS native toast | OS native toast | OS native toast | HTTP push notification |
+| **Platform** | Windows | Windows | Windows · macOS · Linux | Windows | All (incl. mobile) |
+| **Installation** | Installer / Portable | CLI binary | CLI binary | Copy script | One-line curl |
+| **GUI Settings** | ✅ Settings window | ❌ CLI only | ❌ CLI only | ❌ Manual edit | ❌ Manual edit |
+| **Smart Notifications**¹ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Click → Activate Terminal** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Multi-Monitor · Position** | ✅ 4 corners + monitor | ❌ | ❌ | ❌ | ❌ |
+| **DPI Scaling** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Notification Sound** | ✅ | ❌ | ✅ | ❌ | ✅ |
+| **Auto Update** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Mobile Notifications** | ❌ | ✅ (via ntfy) | ❌ | ❌ | ✅ |
+| **Multi AI Tool Support** | Claude Code · Codex CLI | Claude · Copilot · Gemini · Codex, etc. | Claude Code | Claude Code | Universal |
+| **Language** | Rust + TypeScript | C++ | Rust | PowerShell | Shell (curl) |
+
+> ¹ **Smart Notifications**: Skip notification if terminal is already focused + auto-dismiss when terminal regains focus
+
 ## 🛠️ Tech Stack
 
 <p>
