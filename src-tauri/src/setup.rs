@@ -164,14 +164,10 @@ fn exe_path_unquoted() -> String {
         .to_string()
 }
 
-/// Returns the exe path quoted if it contains spaces (for shell commands)
+/// Returns the exe path always quoted (bash interprets backslashes as escape chars without quotes)
 fn exe_path_for_shell() -> String {
     let path = exe_path_unquoted();
-    if path.contains(' ') {
-        format!("\"{}\"", path)
-    } else {
-        path
-    }
+    format!("\"{}\"", path)
 }
 
 /// Read current hook config from ~/.claude/settings.json
