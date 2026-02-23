@@ -23,6 +23,8 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 #[cfg(windows)]
+use windows::Win32::System::Console::{AttachConsole, FreeConsole, GetConsoleWindow};
+#[cfg(windows)]
 use windows::Win32::UI::Accessibility::SetWinEventHook;
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -184,6 +186,158 @@ pub fn get_window_title(hwnd: isize) -> String {
     let mut buf = [0u16; 512];
     let len = unsafe { GetWindowTextW(hwnd, &mut buf) } as usize;
     String::from_utf16_lossy(&buf[..len])
+}
+
+/// Get the PID that owns a given HWND. Returns 0 if invalid.
+#[cfg(windows)]
+pub fn get_window_pid(hwnd: isize) -> u32 {
+    if hwnd == 0 {
+        return 0;
+    }
+    let hwnd = HWND(hwnd as *mut _);
+    let mut pid = 0u32;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    }
+    pid
+}
+
+#[cfg(not(windows))]
+pub fn get_window_pid(_hwnd: isize) -> u32 {
+    0
+}
+
+/// Find the actual terminal window when the source window is a hidden conhost.
+/// On Windows 11 with Windows Terminal as default terminal, the shell process tree
+/// does NOT include WindowsTerminal.exe (they communicate via ConPTY, not parent-child).
+///
+/// Strategy:
+/// 1. Try AttachConsole + GetConsoleWindow (works for legacy conhost)
+/// 2. Fall back to scanning for WindowsTerminal.exe visible windows
+///    (EnumWindows returns z-order, so the topmost/most-recent WT window comes first)
+#[cfg(windows)]
+pub fn find_console_window(pid: u32, exclude_hwnd: isize) -> Option<isize> {
+    if pid == 0 {
+        return None;
+    }
+
+    // Strategy 1: Console API
+    unsafe {
+        if AttachConsole(pid).is_ok() {
+            let console_hwnd = GetConsoleWindow();
+            let _ = FreeConsole();
+            if !console_hwnd.0.is_null() {
+                let hwnd_val = console_hwnd.0 as isize;
+                if hwnd_val != exclude_hwnd && IsWindowVisible(console_hwnd).as_bool() {
+                    let title = get_window_title(hwnd_val);
+                    debug!(
+                        "find_console_window: Console API found hwnd={}, title={:?}",
+                        hwnd_val, title
+                    );
+                    return Some(hwnd_val);
+                }
+            }
+        }
+    }
+
+    // Strategy 2: Find WindowsTerminal.exe windows directly
+    find_windows_terminal_window()
+}
+
+/// Scan for visible WindowsTerminal.exe windows.
+/// Returns the first (topmost in z-order) visible window with a non-empty title.
+#[cfg(windows)]
+fn find_windows_terminal_window() -> Option<isize> {
+    // Step 1: Find all WindowsTerminal.exe PIDs
+    let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+        return None;
+    };
+
+    let mut wt_pids: Vec<u32> = Vec::new();
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+
+    unsafe {
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                let exe = String::from_utf16_lossy(
+                    &entry.szExeFile[..entry
+                        .szExeFile
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(entry.szExeFile.len())],
+                );
+                if exe.eq_ignore_ascii_case("WindowsTerminal.exe") {
+                    wt_pids.push(entry.th32ProcessID);
+                }
+                if Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
+    if wt_pids.is_empty() {
+        debug!("find_windows_terminal_window: no WindowsTerminal.exe processes found");
+        return None;
+    }
+
+    debug!(
+        "find_windows_terminal_window: found WindowsTerminal.exe PIDs: {:?}",
+        wt_pids
+    );
+
+    // Step 2: Find visible windows belonging to those PIDs
+    // EnumWindows returns windows in z-order (topmost first)
+    let result: Arc<Mutex<Option<isize>>> = Arc::new(Mutex::new(None));
+    let result_clone = result.clone();
+
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_wt_windows_callback),
+            LPARAM(&(wt_pids, result_clone) as *const _ as isize),
+        );
+    }
+
+    let found = result.lock().unwrap().take();
+    if let Some(hwnd) = found {
+        let title = get_window_title(hwnd);
+        debug!(
+            "find_windows_terminal_window: found hwnd={}, title={:?}",
+            hwnd, title
+        );
+    }
+    found
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn enum_wt_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let data = &*(lparam.0 as *const (Vec<u32>, Arc<Mutex<Option<isize>>>));
+    let (wt_pids, result) = data;
+
+    if IsWindowVisible(hwnd).as_bool() {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if wt_pids.contains(&pid) {
+            // Check non-empty title (skip hidden/helper windows)
+            let title = get_window_title(hwnd.0 as isize);
+            if !title.is_empty() {
+                let mut lock = result.lock().unwrap();
+                if lock.is_none() {
+                    *lock = Some(hwnd.0 as isize);
+                    return BOOL(0); // Stop enumeration — first (topmost) match is best
+                }
+            }
+        }
+    }
+    BOOL(1) // Continue
+}
+
+#[cfg(not(windows))]
+pub fn find_console_window(_pid: u32, _exclude_hwnd: isize) -> Option<isize> {
+    None
 }
 
 /// Check if the given HWND is currently the foreground window.

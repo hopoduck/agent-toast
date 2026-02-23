@@ -108,7 +108,20 @@ pub fn show_notification(
             let title = win32::get_window_title(*h);
             log::debug!("[DEBUG]   candidate hwnd={} pid={} title={:?}", h, p, title);
         }
-        let (hwnd, _) = found.unwrap_or((0, 0));
+        let (mut hwnd, _) = found.unwrap_or((0, 0));
+
+        // If the found window has an empty title, it's likely a hidden conhost window
+        // (Windows 11 default terminal architecture). Try to find the real terminal window.
+        if hwnd != 0 && win32::get_window_title(hwnd).is_empty() {
+            if let Some(console_hwnd) = win32::find_console_window(request.pid, hwnd) {
+                log::debug!(
+                    "[DEBUG] Replacing empty-title source_hwnd={} with console_hwnd={}",
+                    hwnd,
+                    console_hwnd
+                );
+                hwnd = console_hwnd;
+            }
+        }
 
         // FR-2: Skip if source window is already focused (compare by HWND, not PID)
         let focused = win32::is_hwnd_focused(hwnd);
@@ -323,7 +336,11 @@ fn calculate_notification_position(
     }
 }
 
-/// FR-3: Auto-close notifications whose source HWND matches the newly focused window
+/// FR-3: Auto-close notifications whose source window matches the newly focused window.
+/// Matching strategies (in order):
+/// 1. Exact HWND match
+/// 2. Same PID as source window (handles XAML child windows in Windows Terminal)
+/// 3. Focused PID exists in the notification's process tree
 pub fn on_foreground_changed(
     app: &AppHandle,
     state: &NotificationManagerState,
@@ -332,21 +349,48 @@ pub fn on_foreground_changed(
     if !crate::setup::load_auto_close_on_focus() {
         return;
     }
+
+    let focused_pid = win32::get_window_pid(focused_hwnd);
+
     let mgr = state.lock().unwrap();
+    if mgr.notifications.is_empty() {
+        return;
+    }
+
     let to_close: Vec<String> = mgr
         .notifications
         .iter()
-        .filter(|n| n.source_hwnd == focused_hwnd)
+        .filter(|n| {
+            // Strategy 1: exact HWND match
+            if n.source_hwnd == focused_hwnd {
+                return true;
+            }
+            // Strategy 2: focused window belongs to same process as source window
+            // (Windows Terminal uses multiple HWNDs under one process)
+            if n.source_hwnd != 0 && focused_pid != 0 {
+                let source_pid = win32::get_window_pid(n.source_hwnd);
+                if source_pid != 0 && source_pid == focused_pid {
+                    return true;
+                }
+            }
+            // Strategy 3: focused window's PID is in the process tree
+            if focused_pid != 0 && n.process_tree.contains(&focused_pid) {
+                return true;
+            }
+            false
+        })
         .map(|n| n.id.clone())
         .collect();
-    drop(mgr);
+
     if !to_close.is_empty() {
         log::debug!(
-            "[DEBUG] on_foreground_changed: focused_hwnd={}, closing={:?}",
+            "[DEBUG] on_foreground_changed: focused_hwnd={}, focused_pid={}, closing={:?}",
             focused_hwnd,
+            focused_pid,
             to_close
         );
     }
+    drop(mgr);
 
     for id in to_close {
         close_notification(app, state, &id);
