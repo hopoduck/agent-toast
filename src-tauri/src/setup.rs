@@ -508,7 +508,7 @@ pub fn save_hook_config(
 
     // SessionStart: always add --daemon entry (infrastructure)
     {
-        let entry = build_hook_entry(None, &format!("{} --daemon", exe), None);
+        let entry = build_hook_entry(None, &format!("{} --daemon", exe), Some(5));
         hooks
             .entry("SessionStart".to_string())
             .or_insert_with(|| Value::Array(vec![]))
@@ -973,15 +973,18 @@ fn is_agent_toast_entry(entry: &Value) -> bool {
     extract_agent_toast_cmd(entry).is_some()
 }
 
-fn build_hook_entry(matcher: Option<&str>, command: &str, _timeout: Option<u32>) -> Value {
+fn build_hook_entry(matcher: Option<&str>, command: &str, timeout: Option<u32>) -> Value {
     let mut entry = serde_json::Map::new();
     if let Some(m) = matcher {
         entry.insert("matcher".into(), Value::String(m.into()));
     }
-    let hook_obj = serde_json::json!({
+    let mut hook_obj = serde_json::json!({
         "type": "command",
         "command": command
     });
+    if let Some(t) = timeout {
+        hook_obj["timeout"] = Value::Number(t.into());
+    }
     entry.insert("hooks".into(), Value::Array(vec![hook_obj]));
     Value::Object(entry)
 }
@@ -1165,9 +1168,9 @@ mod tests {
 
     #[test]
     fn build_hook_entry_with_timeout() {
-        let entry = build_hook_entry(None, "agent-toast --daemon", Some(5000));
-        // timeout 파라미터는 현재 _timeout으로 무시되므로 출력에 포함되지 않음
-        assert!(entry.get("timeout").is_none());
+        let entry = build_hook_entry(None, "agent-toast --daemon", Some(5));
+        // timeout이 hook 객체에 포함되어야 함
+        assert_eq!(entry["hooks"][0]["timeout"].as_u64().unwrap(), 5);
         assert_eq!(
             entry["hooks"][0]["command"].as_str().unwrap(),
             "agent-toast --daemon"

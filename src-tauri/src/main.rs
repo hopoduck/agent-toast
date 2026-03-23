@@ -139,13 +139,11 @@ fn main() {
     }
 
     if args.daemon {
-        // If another instance is already running, exit silently
-        if pipe::is_server_running() {
-            return;
-        }
+        // Mutex alone is sufficient for singleton check.
+        // Avoid pipe::is_server_running() — it consumes a pipe instance unnecessarily,
+        // causing broken-pipe recovery on the server side.
         let _mutex = try_acquire_singleton();
         if _mutex.is_none() {
-            info!("Another instance is already starting up, exiting.");
             return;
         }
         // Start as daemon: just launch the Tauri app with no initial notification
