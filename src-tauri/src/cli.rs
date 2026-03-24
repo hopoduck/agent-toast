@@ -27,6 +27,10 @@ pub struct Cli {
     #[arg(long)]
     pub daemon: bool,
 
+    /// Internal: actually run the daemon process (spawned by --daemon)
+    #[arg(long, hide = true)]
+    pub daemon_run: bool,
+
     /// Open hook setup GUI
     #[arg(long)]
     pub setup: bool,
@@ -291,6 +295,44 @@ mod tests {
         assert!(!cli.codex);
         assert!(cli.pid.is_none());
         assert!(cli.event.is_none());
+    }
+
+    #[test]
+    fn cli_parse_daemon_run_flag() {
+        let cli = Cli::try_parse_from(["agent-toast", "--daemon-run"]).unwrap();
+        assert!(cli.daemon_run);
+        assert!(!cli.daemon);
+        assert!(!cli.setup);
+        assert!(!cli.codex);
+    }
+
+    #[test]
+    fn cli_parse_daemon_and_daemon_run_independent() {
+        // --daemon과 --daemon-run은 별개 플래그
+        let cli = Cli::try_parse_from(["agent-toast", "--daemon"]).unwrap();
+        assert!(cli.daemon);
+        assert!(!cli.daemon_run);
+
+        let cli = Cli::try_parse_from(["agent-toast", "--daemon-run"]).unwrap();
+        assert!(!cli.daemon);
+        assert!(cli.daemon_run);
+    }
+
+    #[test]
+    fn cli_daemon_run_not_in_help() {
+        // --daemon-run은 숨김 플래그이므로 help에 표시되지 않아야 함
+        let mut cmd = <Cli as clap::CommandFactory>::command();
+        let mut buf = Vec::new();
+        cmd.write_help(&mut buf).unwrap();
+        let help = String::from_utf8(buf).unwrap();
+        assert!(help.contains("--daemon"));
+        assert!(!help.contains("--daemon-run"));
+    }
+
+    #[test]
+    fn cli_parse_no_args_daemon_run_false() {
+        let cli = Cli::try_parse_from(["agent-toast"]).unwrap();
+        assert!(!cli.daemon_run);
     }
 
     #[test]

@@ -529,7 +529,7 @@ pub fn save_hook_config(
 
     // SessionStart: always add --daemon entry (infrastructure)
     {
-        let entry = build_hook_entry(None, &format!("{} --daemon", exe), Some(5));
+        let entry = build_hook_entry(None, &format!("{} --daemon", exe), None);
         hooks
             .entry("SessionStart".to_string())
             .or_insert_with(|| Value::Array(vec![]))
@@ -2161,5 +2161,45 @@ mod tests {
         let config = parse_hook_config_from_json(&json.to_string());
         assert!(config.notification_permission_enabled);
         assert_eq!(config.notification_permission_message, "두번째");
+    }
+
+    // ── SessionStart daemon hook: no timeout ──
+
+    #[test]
+    fn session_start_daemon_hook_has_no_timeout() {
+        // spawn 방식이므로 --daemon 훅에 timeout이 없어야 함
+        let entry = build_hook_entry(None, "agent-toast --daemon", None);
+        assert!(entry["hooks"][0]["timeout"].is_null());
+    }
+
+    #[test]
+    fn session_start_daemon_hook_command_format() {
+        // SessionStart 훅 커맨드는 "{exe} --daemon" 형식이어야 함
+        let exe = r#""C:\path\agent-toast.exe""#;
+        let entry = build_hook_entry(None, &format!("{} --daemon", exe), None);
+        let cmd = entry["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.ends_with("--daemon"));
+        assert!(cmd.contains("agent-toast"));
+    }
+
+    #[test]
+    fn session_start_daemon_hook_no_matcher() {
+        // SessionStart --daemon 훅은 matcher가 없어야 함 (모든 세션에서 실행)
+        let entry = build_hook_entry(None, "agent-toast --daemon", None);
+        assert!(entry["matcher"].is_null());
+    }
+
+    #[test]
+    fn parse_daemon_with_timeout_still_not_enabled() {
+        // --daemon에 timeout이 있어도 --message가 없으면 session_start_enabled는 false
+        let json = r#"{
+            "hooks": {
+                "SessionStart": [
+                    {"hooks": [{"type": "command", "command": "agent-toast --daemon", "timeout": 5}]}
+                ]
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(!config.session_start_enabled);
     }
 }

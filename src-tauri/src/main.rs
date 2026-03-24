@@ -138,16 +138,79 @@ fn main() {
         return;
     }
 
-    if args.daemon {
-        // Mutex alone is sufficient for singleton check.
-        // Avoid pipe::is_server_running() — it consumes a pipe instance unnecessarily,
-        // causing broken-pipe recovery on the server side.
+    // --daemon-run: internal flag used by the detached child process
+    if args.daemon_run {
         let _mutex = try_acquire_singleton();
         if _mutex.is_none() {
             return;
         }
-        // Start as daemon: just launch the Tauri app with no initial notification
         agent_toast_lib::run_app(None, false);
+        return;
+    }
+
+    if args.daemon {
+        // Check if already running
+        let _mutex = try_acquire_singleton();
+        if _mutex.is_none() {
+            return;
+        }
+        // Release mutex so the child process can acquire it
+        #[cfg(windows)]
+        if let Some(handle) = _mutex {
+            unsafe {
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+        }
+
+        // Spawn detached daemon using CreateProcessW with bInheritHandles=FALSE.
+        // Rust's Command::spawn() always sets bInheritHandles=TRUE, which causes
+        // the child to inherit Claude Code's pipe handles — preventing hook completion.
+        #[cfg(windows)]
+        {
+            use windows::Win32::Foundation::CloseHandle;
+            use windows::Win32::System::Threading::{
+                CreateProcessW, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW,
+            };
+
+            let exe = std::env::current_exe().unwrap_or_default();
+            let cmd = format!("\"{}\" --daemon-run", exe.display());
+            let mut cmd_wide: Vec<u16> = cmd.encode_utf16().chain(std::iter::once(0)).collect();
+
+            let si = STARTUPINFOW {
+                cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+                ..Default::default()
+            };
+            let mut pi = PROCESS_INFORMATION::default();
+
+            const FLAGS: u32 = 0x0000_0200 // CREATE_NEW_PROCESS_GROUP
+                             | 0x0800_0000; // CREATE_NO_WINDOW
+
+            unsafe {
+                let ok = CreateProcessW(
+                    None,
+                    Some(windows::core::PWSTR(cmd_wide.as_mut_ptr())),
+                    None,
+                    None,
+                    false, // bInheritHandles = FALSE
+                    PROCESS_CREATION_FLAGS(FLAGS),
+                    None,
+                    None,
+                    &si,
+                    &mut pi,
+                );
+                if ok.is_ok() {
+                    let _ = CloseHandle(pi.hProcess);
+                    let _ = CloseHandle(pi.hThread);
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let exe = std::env::current_exe().unwrap_or_default();
+            let _ = std::process::Command::new(&exe)
+                .arg("--daemon-run")
+                .spawn();
+        }
         return;
     }
 
