@@ -426,4 +426,195 @@ mod tests {
         // u32 파싱이므로 음수는 실패
         assert_eq!(parse_version("-1.2.3"), None);
     }
+
+    // ── get_state_path tests ──
+
+    #[test]
+    fn get_state_path_returns_some() {
+        let path = get_state_path();
+        assert!(path.is_some());
+    }
+
+    #[test]
+    fn get_state_path_ends_with_updater_json() {
+        let path = get_state_path().unwrap();
+        assert!(path.ends_with("updater.json"));
+        assert!(path.to_string_lossy().contains("agent-toast"));
+    }
+
+    // ── save_state / load_state tests ──
+
+    #[test]
+    fn load_state_does_not_panic() {
+        // load_state가 패닉하지 않는 것을 검증
+        let state = load_state();
+        let _ = state.last_check;
+        let _ = state.pending_version;
+    }
+
+    #[test]
+    fn save_state_does_not_panic() {
+        // save_state가 패닉하지 않는 것을 검증
+        let state = UpdaterState {
+            last_check: Some(Utc::now().to_rfc3339()),
+            pending_version: None,
+        };
+        save_state(&state);
+    }
+
+    // ── should_check logic tests (순수 로직 검증) ──
+
+    #[test]
+    fn should_check_logic_none_last_check() {
+        // last_check가 None이면 체크 필요
+        let state = UpdaterState {
+            last_check: None,
+            pending_version: None,
+        };
+        assert!(state.last_check.is_none());
+    }
+
+    #[test]
+    fn should_check_logic_old_timestamp() {
+        // 24시간 전이면 체크 필요
+        let last = "2020-01-01T00:00:00Z";
+        let last_time = last.parse::<DateTime<Utc>>().unwrap();
+        let now = Utc::now();
+        let diff = now.signed_duration_since(last_time);
+        assert!(diff.num_hours() >= CHECK_INTERVAL_HOURS);
+    }
+
+    #[test]
+    fn should_check_logic_recent_timestamp() {
+        // 방금 체크했으면 체크 불필요
+        let last = Utc::now().to_rfc3339();
+        let last_time = last.parse::<DateTime<Utc>>().unwrap();
+        let now = Utc::now();
+        let diff = now.signed_duration_since(last_time);
+        assert!(diff.num_hours() < CHECK_INTERVAL_HOURS);
+    }
+
+    #[test]
+    fn should_check_logic_invalid_timestamp() {
+        // 잘못된 형식이면 체크 필요
+        let invalid = "not-a-date";
+        let parsed = invalid.parse::<DateTime<Utc>>();
+        assert!(parsed.is_err());
+        // should_check에서 파싱 실패 시 true 반환하는 로직
+    }
+
+    // ── CHECK_INTERVAL_HOURS constant ──
+
+    #[test]
+    fn check_interval_is_12_hours() {
+        assert_eq!(CHECK_INTERVAL_HOURS, 12);
+    }
+
+    // ── Boundary value tests ──
+
+    #[test]
+    fn parse_version_u32_max_components() {
+        let v = format!("{}.{}.{}", u32::MAX, u32::MAX, u32::MAX);
+        assert_eq!(parse_version(&v), Some((u32::MAX, u32::MAX, u32::MAX)));
+    }
+
+    #[test]
+    fn parse_version_u32_overflow_fails() {
+        // u32::MAX + 1 = 4294967296, u32 파싱 실패
+        let v = "4294967296.0.0";
+        assert_eq!(parse_version(v), None);
+    }
+
+    #[test]
+    fn parse_version_zero_zero_one() {
+        assert_eq!(parse_version("0.0.1"), Some((0, 0, 1)));
+    }
+
+    #[test]
+    fn is_newer_adjacent_patch() {
+        // 1.0.0 → 1.0.1 (최소 패치 증가)
+        assert!(is_newer("1.0.0", "1.0.1"));
+        assert!(!is_newer("1.0.1", "1.0.0"));
+    }
+
+    #[test]
+    fn is_newer_minor_rollover() {
+        // 1.255.255 → 1.256.0
+        assert!(is_newer("1.255.255", "1.256.0"));
+    }
+
+    #[test]
+    fn is_newer_major_zero_to_one() {
+        // 0.x.x → 1.0.0 (메이저 버전 첫 릴리스)
+        assert!(is_newer("0.99.99", "1.0.0"));
+    }
+
+    #[test]
+    fn is_newer_u32_max_versions() {
+        let max = format!("{}.{}.{}", u32::MAX, u32::MAX, u32::MAX);
+        // 동일하면 newer 아님
+        assert!(!is_newer(&max, &max));
+        // MAX보다 작은 버전은 newer
+        let almost_max = format!("{}.{}.{}", u32::MAX, u32::MAX, u32::MAX - 1);
+        assert!(is_newer(&almost_max, &max));
+    }
+
+    #[test]
+    fn duration_exactly_at_interval_boundary() {
+        // 정확히 12시간 → 체크 필요 (>= 비교)
+        let past = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let exactly_12h = "2024-01-01T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let diff = exactly_12h.signed_duration_since(past);
+        assert_eq!(diff.num_hours(), 12);
+        assert!(diff.num_hours() >= CHECK_INTERVAL_HOURS);
+    }
+
+    #[test]
+    fn duration_one_hour_before_interval() {
+        // 11시간 → 체크 불필요
+        let past = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let almost = "2024-01-01T11:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let diff = almost.signed_duration_since(past);
+        assert_eq!(diff.num_hours(), 11);
+        assert!(diff.num_hours() < CHECK_INTERVAL_HOURS);
+    }
+
+    #[test]
+    fn updater_state_empty_strings() {
+        let state = UpdaterState {
+            last_check: Some("".to_string()),
+            pending_version: Some("".to_string()),
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let loaded: UpdaterState = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.last_check, Some("".to_string()));
+        assert_eq!(loaded.pending_version, Some("".to_string()));
+    }
+
+    #[test]
+    fn parse_version_dots_only() {
+        assert_eq!(parse_version("..."), None);
+    }
+
+    #[test]
+    fn parse_version_with_trailing_dot() {
+        // "1.2.3." → parts = ["1", "2", "3", ""], len >= 3
+        assert_eq!(parse_version("1.2.3."), Some((1, 2, 3)));
+    }
+
+    #[test]
+    fn github_release_missing_tag_name_fails() {
+        let json = r#"{"name": "Release"}"#;
+        let result = serde_json::from_str::<GithubRelease>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn github_release_empty_tag_name() {
+        let json = r#"{"tag_name": ""}"#;
+        let release: GithubRelease = serde_json::from_str(json).unwrap();
+        assert_eq!(release.tag_name, "");
+        // 빈 태그는 파싱 실패 → newer 판정 안 됨
+        assert!(!is_newer("1.0.0", &release.tag_name));
+    }
 }

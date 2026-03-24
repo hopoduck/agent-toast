@@ -471,4 +471,238 @@ mod tests {
         assert!(req.message.is_none());
         assert!(req.title_hint.is_none());
     }
+
+    // ── is_server_running / try_send tests ──
+
+    // is_server_running은 실제 파이프를 열어보는 동작이므로 단위 테스트에서 호출하지 않음
+
+    // try_send는 실제 파이프 서버에 요청을 보내므로 단위 테스트에서 호출하지 않음
+    // (실행 중인 앱에 알림이 뜨는 부작용 발생)
+
+    #[test]
+    fn try_send_serializes_request_correctly() {
+        // try_send 내부에서 serde_json::to_vec 사용하는 것과 동일한 직렬화 검증
+        let req = NotifyRequest {
+            pid: 42,
+            event: "task_complete".to_string(),
+            message: Some("테스트 메시지".to_string()),
+            title_hint: Some("project-dir".to_string()),
+            process_tree: Some(vec![1, 2, 3]),
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let len = (data.len() as u32).to_le_bytes();
+
+        // try_send가 보내는 형식 검증
+        assert_eq!(len.len(), 4);
+        assert!(!data.is_empty());
+
+        // 역직렬화 가능 확인
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.pid, 42);
+        assert_eq!(decoded.source, "claude");
+    }
+
+    // ── PIPE_NAME constant tests ──
+
+    #[test]
+    fn pipe_name_length() {
+        assert!(PIPE_NAME.len() > r"\\.\pipe\".len());
+    }
+
+    #[test]
+    fn pipe_name_is_valid_windows_path() {
+        // Windows named pipe 경로는 \\.\pipe\ 접두사 필수
+        assert!(PIPE_NAME.starts_with(r"\\.\pipe\"));
+        // 접두사 이후에 이름이 있어야 함
+        let name = &PIPE_NAME[r"\\.\pipe\".len()..];
+        assert!(!name.is_empty());
+    }
+
+    // ── Boundary value tests ──
+
+    #[test]
+    fn wire_format_pid_zero() {
+        let req = NotifyRequest {
+            pid: 0,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.pid, 0);
+    }
+
+    #[test]
+    fn wire_format_pid_u32_max() {
+        let req = NotifyRequest {
+            pid: u32::MAX,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.pid, u32::MAX);
+    }
+
+    #[test]
+    fn wire_format_empty_event() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.event, "");
+    }
+
+    #[test]
+    fn wire_format_empty_source() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.source, "");
+    }
+
+    #[test]
+    fn wire_format_single_element_process_tree() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: Some(vec![42]),
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.process_tree, Some(vec![42]));
+    }
+
+    #[test]
+    fn wire_format_empty_process_tree_vs_none() {
+        // Some(vec![])와 None은 직렬화/역직렬화 시 구분되어야 함
+        let req_empty = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: Some(vec![]),
+            source: "claude".into(),
+        };
+        let req_none = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+
+        let data_empty = serde_json::to_vec(&req_empty).unwrap();
+        let data_none = serde_json::to_vec(&req_none).unwrap();
+
+        let decoded_empty: NotifyRequest = serde_json::from_slice(&data_empty).unwrap();
+        let decoded_none: NotifyRequest = serde_json::from_slice(&data_none).unwrap();
+
+        assert_eq!(decoded_empty.process_tree, Some(vec![]));
+        assert!(decoded_none.process_tree.is_none());
+    }
+
+    #[test]
+    fn wire_format_process_tree_with_zero_pid() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: Some(vec![0, 0, 0]),
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.process_tree, Some(vec![0, 0, 0]));
+    }
+
+    #[test]
+    fn wire_format_process_tree_with_u32_max() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: Some(vec![u32::MAX]),
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.process_tree, Some(vec![u32::MAX]));
+    }
+
+    #[test]
+    fn wire_format_length_prefix_for_small_payload() {
+        // 최소 페이로드의 길이 프리픽스가 4바이트 내에 들어가는지
+        let req = NotifyRequest {
+            pid: 0,
+            event: "".to_string(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let len = data.len() as u32;
+        // 최소 페이로드도 유효한 JSON이므로 2바이트 이상
+        assert!(len >= 2);
+        // u32 범위 내
+        assert!(len < u32::MAX);
+    }
+
+    #[test]
+    fn wire_format_message_with_only_whitespace() {
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: Some("   \t\n  ".to_string()),
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.message.as_deref(), Some("   \t\n  "));
+    }
+
+    #[test]
+    fn wire_format_title_hint_very_long() {
+        let long_hint = "가".repeat(10000); // 유니코드 3바이트 × 10000
+        let req = NotifyRequest {
+            pid: 1,
+            event: "test".to_string(),
+            message: None,
+            title_hint: Some(long_hint.clone()),
+            process_tree: None,
+            source: "claude".into(),
+        };
+        let data = serde_json::to_vec(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
+        assert_eq!(decoded.title_hint.as_deref(), Some(long_hint.as_str()));
+    }
 }

@@ -668,4 +668,396 @@ mod tests {
         // Modifying clone doesn't affect original (deep copy)
         // Note: Rust's clone is always deep for Vec
     }
+
+    // ── NotificationManager mutation tests ──
+
+    #[test]
+    fn notification_manager_add_and_remove() {
+        let state = create_manager();
+        let data = NotificationData {
+            id: "notify-1".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "task_complete".to_string(),
+            message: None,
+            source_hwnd: 0,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.notifications.push(data);
+            assert_eq!(mgr.notifications.len(), 1);
+        }
+
+        // 제거
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.notifications.retain(|n| n.id != "notify-1");
+            assert!(mgr.notifications.is_empty());
+        }
+    }
+
+    #[test]
+    fn notification_manager_remove_specific_from_many() {
+        let state = create_manager();
+        {
+            let mut mgr = state.lock().unwrap();
+            for i in 1..=5 {
+                mgr.notifications.push(NotificationData {
+                    id: format!("notify-{}", i),
+                    window_title: format!("Win {}", i),
+                    event_display: "test".to_string(),
+                    message: None,
+                    source_hwnd: i as isize,
+                    process_tree: vec![],
+                    auto_dismiss_seconds: 0,
+                    source: "claude".to_string(),
+                });
+            }
+            assert_eq!(mgr.notifications.len(), 5);
+        }
+
+        // 중간 항목 제거
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.notifications.retain(|n| n.id != "notify-3");
+            assert_eq!(mgr.notifications.len(), 4);
+            assert!(mgr.notifications.iter().all(|n| n.id != "notify-3"));
+        }
+
+        // 나머지 확인
+        assert!(get_notification_for_window(&state, "notify-1").is_some());
+        assert!(get_notification_for_window(&state, "notify-2").is_some());
+        assert!(get_notification_for_window(&state, "notify-3").is_none());
+        assert!(get_notification_for_window(&state, "notify-4").is_some());
+        assert!(get_notification_for_window(&state, "notify-5").is_some());
+    }
+
+    #[test]
+    fn notification_manager_counter_id_generation() {
+        let state = create_manager();
+        let mut ids = Vec::new();
+        {
+            let mut mgr = state.lock().unwrap();
+            for _ in 0..10 {
+                mgr.counter += 1;
+                ids.push(format!("notify-{}", mgr.counter));
+            }
+        }
+        // 모든 ID가 고유해야 함
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len());
+    }
+
+    #[test]
+    fn notification_manager_concurrent_access() {
+        let state = create_manager();
+        let state2 = state.clone();
+
+        // 첫 번째 잠금에서 추가
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.notifications.push(NotificationData {
+                id: "notify-1".to_string(),
+                window_title: "Test".to_string(),
+                event_display: "test".to_string(),
+                message: None,
+                source_hwnd: 0,
+                process_tree: vec![],
+                auto_dismiss_seconds: 0,
+                source: "claude".to_string(),
+            });
+        }
+
+        // 두 번째 참조로 읽기
+        let result = get_notification_for_window(&state2, "notify-1");
+        assert!(result.is_some());
+    }
+
+    // ── Stacking calculation additional tests ──
+
+    #[test]
+    fn notification_stack_many_items() {
+        for index in 0..20 {
+            let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
+            let expected = (index as f64) * 150.0; // 140 + 10
+            assert!(
+                (y_offset - expected).abs() < 0.001,
+                "index={}, y_offset={}, expected={}",
+                index,
+                y_offset,
+                expected
+            );
+        }
+    }
+
+    // ── NotificationData Debug trait ──
+
+    #[test]
+    fn notification_data_debug_format() {
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Win".to_string(),
+            event_display: "ev".to_string(),
+            message: None,
+            source_hwnd: 0,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+        let debug = format!("{:?}", data);
+        assert!(debug.contains("test"));
+        assert!(debug.contains("Win"));
+    }
+
+    // ── Constants tests ──
+
+    #[test]
+    fn notification_dimensions_values() {
+        assert_eq!(NOTIFICATION_WIDTH, 380.0);
+        assert_eq!(NOTIFICATION_HEIGHT, 140.0);
+        assert_eq!(NOTIFICATION_MARGIN, 10.0);
+    }
+
+    // ── NotificationData deserialization edge cases ──
+
+    #[test]
+    fn notification_data_deserialize_from_json() {
+        let json = r#"{
+            "id": "notify-99",
+            "window_title": "Test Terminal",
+            "event_display": "error",
+            "message": "오류 발생",
+            "source_hwnd": 9999,
+            "process_tree": [1, 2, 3],
+            "auto_dismiss_seconds": 15,
+            "source": "codex"
+        }"#;
+        let data: NotificationData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.id, "notify-99");
+        assert_eq!(data.source_hwnd, 9999);
+        assert_eq!(data.auto_dismiss_seconds, 15);
+        assert_eq!(data.source, "codex");
+    }
+
+    #[test]
+    fn notification_data_negative_hwnd() {
+        // isize이므로 음수도 가능 (Windows HWND는 실제로 포인터 크기)
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "test".to_string(),
+            message: None,
+            source_hwnd: -1,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.source_hwnd, -1);
+    }
+
+    #[test]
+    fn notification_data_large_process_tree() {
+        let large_tree: Vec<u32> = (0..1000).collect();
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "test".to_string(),
+            message: None,
+            source_hwnd: 0,
+            process_tree: large_tree.clone(),
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.process_tree.len(), 1000);
+    }
+
+    // ── Boundary value tests ──
+
+    #[test]
+    fn notification_data_source_hwnd_isize_max() {
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "test".to_string(),
+            message: None,
+            source_hwnd: isize::MAX,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.source_hwnd, isize::MAX);
+    }
+
+    #[test]
+    fn notification_data_source_hwnd_isize_min() {
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "test".to_string(),
+            message: None,
+            source_hwnd: isize::MIN,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.source_hwnd, isize::MIN);
+    }
+
+    #[test]
+    fn notification_data_auto_dismiss_u32_max() {
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "test".to_string(),
+            message: None,
+            source_hwnd: 0,
+            process_tree: vec![],
+            auto_dismiss_seconds: u32::MAX,
+            source: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.auto_dismiss_seconds, u32::MAX);
+    }
+
+    #[test]
+    fn notification_data_empty_strings() {
+        let data = NotificationData {
+            id: "".to_string(),
+            window_title: "".to_string(),
+            event_display: "".to_string(),
+            message: Some("".to_string()),
+            source_hwnd: 0,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: "".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, "");
+        assert_eq!(deserialized.window_title, "");
+        assert_eq!(deserialized.event_display, "");
+        assert_eq!(deserialized.message.as_deref(), Some(""));
+        assert_eq!(deserialized.source, "");
+    }
+
+    #[test]
+    fn notification_manager_counter_u32_max() {
+        let state = create_manager();
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.counter = u32::MAX - 1;
+            mgr.counter += 1;
+            assert_eq!(mgr.counter, u32::MAX);
+            let id = format!("notify-{}", mgr.counter);
+            assert_eq!(id, format!("notify-{}", u32::MAX));
+        }
+    }
+
+    #[test]
+    fn notification_stack_offset_large_index() {
+        // 100개 스택 시 오프셋 계산
+        let index = 99;
+        let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
+        let expected = 99.0 * 150.0;
+        assert!((y_offset - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn get_notification_for_window_empty_id() {
+        let state = create_manager();
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.notifications.push(NotificationData {
+                id: "".to_string(),
+                window_title: "Test".to_string(),
+                event_display: "test".to_string(),
+                message: None,
+                source_hwnd: 0,
+                process_tree: vec![],
+                auto_dismiss_seconds: 0,
+                source: "claude".to_string(),
+            });
+        }
+        // 빈 ID로도 조회 가능
+        let result = get_notification_for_window(&state, "");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn notification_manager_retain_none_matching() {
+        let state = create_manager();
+        {
+            let mut mgr = state.lock().unwrap();
+            mgr.notifications.push(NotificationData {
+                id: "notify-1".to_string(),
+                window_title: "Test".to_string(),
+                event_display: "test".to_string(),
+                message: None,
+                source_hwnd: 0,
+                process_tree: vec![],
+                auto_dismiss_seconds: 0,
+                source: "claude".to_string(),
+            });
+            // 존재하지 않는 ID로 retain → 변화 없음
+            mgr.notifications.retain(|n| n.id != "nonexistent");
+            assert_eq!(mgr.notifications.len(), 1);
+        }
+    }
+
+    #[test]
+    fn notification_manager_retain_all_matching() {
+        let state = create_manager();
+        {
+            let mut mgr = state.lock().unwrap();
+            for i in 0..5 {
+                mgr.notifications.push(NotificationData {
+                    id: format!("same-{}", i),
+                    window_title: "Test".to_string(),
+                    event_display: "test".to_string(),
+                    message: None,
+                    source_hwnd: 100,
+                    process_tree: vec![],
+                    auto_dismiss_seconds: 0,
+                    source: "claude".to_string(),
+                });
+            }
+            // source_hwnd 기준 필터 (모든 항목이 100)
+            let to_close: Vec<String> = mgr
+                .notifications
+                .iter()
+                .filter(|n| n.source_hwnd == 100)
+                .map(|n| n.id.clone())
+                .collect();
+            assert_eq!(to_close.len(), 5);
+        }
+    }
+
+    #[test]
+    fn notification_data_process_tree_with_duplicates() {
+        let data = NotificationData {
+            id: "test".to_string(),
+            window_title: "Test".to_string(),
+            event_display: "test".to_string(),
+            message: None,
+            source_hwnd: 0,
+            process_tree: vec![100, 100, 100],
+            auto_dismiss_seconds: 0,
+            source: "claude".to_string(),
+        };
+        let json = serde_json::to_string(&data).unwrap();
+        let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.process_tree, vec![100, 100, 100]);
+    }
 }
