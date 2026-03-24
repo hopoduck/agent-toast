@@ -339,8 +339,8 @@ fn calculate_notification_position(
 /// FR-3: Auto-close notifications whose source window matches the newly focused window.
 /// Matching strategies (in order):
 /// 1. Exact HWND match
-/// 2. Same PID as source window (handles XAML child windows in Windows Terminal)
-/// 3. Focused PID exists in the notification's process tree
+/// 2. Root ancestor match — resolves XAML child windows (e.g., Windows Terminal internals)
+///    to their top-level parent, without false-matching other windows of the same process
 pub fn on_foreground_changed(
     app: &AppHandle,
     state: &NotificationManagerState,
@@ -350,7 +350,7 @@ pub fn on_foreground_changed(
         return;
     }
 
-    let focused_pid = win32::get_window_pid(focused_hwnd);
+    let focused_root = win32::get_root_hwnd(focused_hwnd);
 
     let mgr = state.lock().unwrap();
     if mgr.notifications.is_empty() {
@@ -365,17 +365,15 @@ pub fn on_foreground_changed(
             if n.source_hwnd == focused_hwnd {
                 return true;
             }
-            // Strategy 2: focused window belongs to same process as source window
-            // (Windows Terminal uses multiple HWNDs under one process)
-            if n.source_hwnd != 0 && focused_pid != 0 {
-                let source_pid = win32::get_window_pid(n.source_hwnd);
-                if source_pid != 0 && source_pid == focused_pid {
+            // Strategy 2: root ancestor match
+            // Handles XAML child windows in Windows Terminal — the focused child
+            // resolves to the same root as the source window. Different top-level
+            // windows (e.g., separate VS Code windows) have distinct roots.
+            if n.source_hwnd != 0 {
+                let source_root = win32::get_root_hwnd(n.source_hwnd);
+                if source_root != 0 && source_root == focused_root {
                     return true;
                 }
-            }
-            // Strategy 3: focused window's PID is in the process tree
-            if focused_pid != 0 && n.process_tree.contains(&focused_pid) {
-                return true;
             }
             false
         })
@@ -384,9 +382,9 @@ pub fn on_foreground_changed(
 
     if !to_close.is_empty() {
         log::debug!(
-            "[DEBUG] on_foreground_changed: focused_hwnd={}, focused_pid={}, closing={:?}",
+            "[DEBUG] on_foreground_changed: focused_hwnd={}, focused_root={}, closing={:?}",
             focused_hwnd,
-            focused_pid,
+            focused_root,
             to_close
         );
     }

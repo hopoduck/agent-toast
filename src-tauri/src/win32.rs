@@ -32,9 +32,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_MENU,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, EnumWindows, GetForegroundWindow, GetMessageW, GetWindowTextW,
+    DispatchMessageW, EnumWindows, GetAncestor, GetForegroundWindow, GetMessageW, GetWindowTextW,
     GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindow,
-    SystemParametersInfoW, EVENT_SYSTEM_FOREGROUND, MSG, SPI_GETWORKAREA, SW_RESTORE,
+    SystemParametersInfoW, EVENT_SYSTEM_FOREGROUND, GA_ROOT, MSG, SPI_GETWORKAREA, SW_RESTORE,
     WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
 };
 
@@ -205,6 +205,27 @@ pub fn get_window_pid(hwnd: isize) -> u32 {
 #[cfg(not(windows))]
 pub fn get_window_pid(_hwnd: isize) -> u32 {
     0
+}
+
+/// Get the root ancestor (top-level) window of a given HWND.
+/// XAML child windows (e.g., Windows Terminal internals) resolve to the main window.
+/// A top-level window returns itself.
+#[cfg(windows)]
+pub fn get_root_hwnd(hwnd: isize) -> isize {
+    if hwnd == 0 {
+        return 0;
+    }
+    let root = unsafe { GetAncestor(HWND(hwnd as *mut _), GA_ROOT) };
+    if root.0.is_null() {
+        hwnd
+    } else {
+        root.0 as isize
+    }
+}
+
+#[cfg(not(windows))]
+pub fn get_root_hwnd(hwnd: isize) -> isize {
+    hwnd
 }
 
 /// Find the actual terminal window when the source window is a hidden conhost.
