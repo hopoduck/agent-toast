@@ -47,6 +47,7 @@ export interface HookConfig {
   notification_sound: boolean;
   notification_monitor: string;
   locale: string;
+  auto_start: boolean;
   codex_enabled: boolean;
 }
 

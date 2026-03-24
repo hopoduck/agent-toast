@@ -198,6 +198,21 @@ onMounted(async () => {
         }}</span>
         <Switch v-model="config.notification_sound" />
       </div>
+
+      <!-- Auto start -->
+      <div
+        class="flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+      >
+        <div class="flex flex-col gap-0.5">
+          <span class="text-sm font-medium text-foreground">{{
+            t("general.auto_start")
+          }}</span>
+          <span class="text-[11px] text-muted-foreground">{{
+            t("general.auto_start_desc")
+          }}</span>
+        </div>
+        <Switch v-model="config.auto_start" />
+      </div>
     </div>
 
     <Button variant="outline" class="w-full" @click="emit('test-notification')">

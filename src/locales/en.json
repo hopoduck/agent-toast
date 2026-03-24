@@ -53,6 +53,8 @@
     "enabled": "On",
     "disabled": "Off",
     "sound": "Notification Sound",
+    "auto_start": "Auto-start on Session",
+    "auto_start_desc": "Automatically launch app when a Claude Code session starts",
     "test_notification": "Show Test Notification",
     "language": "Language"
   },

@@ -55,6 +55,8 @@
     "enabled": "활성",
     "disabled": "비활성",
     "sound": "알림 소리",
+    "auto_start": "세션 시작 시 자동 실행",
+    "auto_start_desc": "Claude Code 세션 시작 시 앱을 자동으로 실행합니다",
     "test_notification": "테스트 알림 띄우기",
     "language": "언어 / Language"
   },

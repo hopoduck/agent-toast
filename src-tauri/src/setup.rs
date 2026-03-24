@@ -63,6 +63,9 @@ pub struct HookConfig {
     /// UI 언어: "ko", "en"
     #[serde(default = "default_locale")]
     pub locale: String,
+    /// 세션 시작 시 앱 자동 실행 여부 (--daemon 훅)
+    #[serde(default = "default_auto_start")]
+    pub auto_start: bool,
     /// Codex notify 훅 활성화 여부
     #[serde(default)]
     pub codex_enabled: bool,
@@ -93,6 +96,10 @@ fn default_notification_sound() -> bool {
 
 fn default_notification_monitor() -> String {
     "primary".into()
+}
+
+fn default_auto_start() -> bool {
+    true
 }
 
 fn default_locale() -> String {
@@ -168,6 +175,7 @@ impl Default for HookConfig {
             notification_sound: true,
             notification_monitor: "primary".into(),
             locale,
+            auto_start: true,
             codex_enabled: false,
             version: String::new(),
         }
@@ -256,6 +264,9 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .as_str()
             .unwrap_or("ko")
             .to_string(),
+        auto_start: root["agent_toast"]["auto_start"]
+            .as_bool()
+            .unwrap_or(true),
         codex_enabled: root["agent_toast"]["codex_enabled"]
             .as_bool()
             .unwrap_or_else(get_codex_installed),
@@ -535,8 +546,8 @@ pub fn save_hook_config(
 
     // Build agent-toast hooks
 
-    // SessionStart: always add --daemon entry (infrastructure)
-    {
+    // SessionStart: add --daemon entry if auto_start is enabled
+    if config.auto_start {
         let entry = build_hook_entry(None, &format!("{} --daemon", exe), None);
         hooks
             .entry("SessionStart".to_string())
@@ -788,6 +799,7 @@ pub fn save_hook_config(
         Value::String(config.notification_monitor),
     );
     cn.insert("locale".into(), Value::String(config.locale));
+    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
     cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
     cn.insert(
         "version".into(),

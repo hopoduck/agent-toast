@@ -74,6 +74,7 @@ const config = ref<HookConfig>({
   notification_sound: true,
   notification_monitor: "primary",
   locale: navigator.language.startsWith("ko") ? "ko" : "en",
+  auto_start: true,
   codex_enabled: false,
 });
 
@@ -203,6 +204,7 @@ function onReset() {
     notification_sound: true,
     notification_monitor: "primary",
     locale: currentLocale,
+    auto_start: true,
     codex_enabled: false,
   };
 }
