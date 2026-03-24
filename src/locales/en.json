@@ -130,6 +130,8 @@
     "howto_step3_title": "Refresh Claude Code",
     "howto_step3_desc": "Run /hooks in active Claude sessions to apply changes.",
     "links_title": "Links",
+    "star_message": "If you find this useful, please give us a star on GitHub!",
+    "star_button": "Star on GitHub",
     "made_with": "Built with Rust + Tauri + Vue 3",
     "update_check": "Check for Updates",
     "update_checking": "Checking...",

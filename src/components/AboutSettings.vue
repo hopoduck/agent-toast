@@ -10,6 +10,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast } from "vue-sonner";
+import confetti from "canvas-confetti";
 import logoPng from "../assets/logo.png";
 
 const { t } = useI18n();
@@ -99,6 +100,25 @@ async function restartApp() {
   await relaunch();
 }
 
+function onStarClick(e: MouseEvent) {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const x = (rect.left + rect.width / 2) / window.innerWidth;
+  const y = (rect.top + rect.height / 2) / window.innerHeight;
+
+  confetti({
+    particleCount: 60,
+    spread: 70,
+    origin: { x, y },
+    colors: ["#ff9a3c", "#ffcf48", "#ff6f3c", "#ffa62b", "#ffe066"],
+    ticks: 120,
+    gravity: 1.2,
+    scalar: 0.9,
+    shapes: ["star", "circle"],
+  });
+
+  openUrl("https://github.com/hopoduck/agent-toast");
+}
+
 onMounted(async () => {
   version.value = await getVersion();
   portable.value = await invoke<boolean>("is_portable");
@@ -176,6 +196,32 @@ onMounted(async () => {
         </Button>
       </div>
     </div>
+
+    <!-- Star Request -->
+    <button
+      class="star-cta group relative overflow-hidden rounded-xl border border-primary/15 dark:border-primary/20 p-[1px] transition-all duration-300 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 text-left w-full cursor-pointer bg-transparent"
+      @click="onStarClick"
+    >
+      <div class="relative flex items-center gap-3 rounded-[11px] bg-gradient-to-r from-primary/[0.06] via-accent/[0.04] to-transparent dark:from-primary/[0.1] dark:via-accent/[0.06] dark:to-transparent px-4 py-3.5">
+        <div class="star-icon relative shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 dark:bg-primary/15 transition-colors duration-300 group-hover:bg-primary/15 dark:group-hover:bg-primary/20">
+          <svg class="text-primary transition-transform duration-500 ease-out group-hover:scale-110 group-hover:rotate-[72deg]" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+          </svg>
+        </div>
+        <div class="flex flex-col gap-0.5 min-w-0">
+          <span class="text-[13px] font-medium text-foreground/85 leading-snug">{{ t('about.star_message') }}</span>
+          <span class="text-[11px] leading-none text-muted-foreground/70 inline-flex items-center gap-1 transition-colors duration-300 group-hover:text-primary/80">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" class="shrink-0 opacity-60">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+            {{ t('about.star_button') }}
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+              <path d="M7 17l9.2-9.2M17 17V7.8H7.8"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </button>
 
     <!-- Footer -->
     <div class="mt-auto pt-2">

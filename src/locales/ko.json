@@ -132,6 +132,8 @@
     "howto_step3_title": "Claude Code 새로고침",
     "howto_step3_desc": "실행 중인 Claude 세션에서 /hooks로 새로고침하면 적용됩니다.",
     "links_title": "관련 링크",
+    "star_message": "유용하게 사용하고 계신다면, GitHub에 Star 하나 남겨주세요!",
+    "star_button": "GitHub에서 Star 누르기",
     "made_with": "Rust + Tauri + Vue 3로 제작됨",
     "update_check": "업데이트 확인",
     "update_checking": "확인 중...",
