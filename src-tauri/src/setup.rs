@@ -66,6 +66,9 @@ pub struct HookConfig {
     /// Codex notify 훅 활성화 여부
     #[serde(default)]
     pub codex_enabled: bool,
+    /// 설정을 저장한 앱 버전 (마이그레이션 판단용)
+    #[serde(default)]
+    pub version: String,
 }
 
 fn default_title_display_mode() -> String {
@@ -166,6 +169,7 @@ impl Default for HookConfig {
             notification_monitor: "primary".into(),
             locale,
             codex_enabled: false,
+            version: String::new(),
         }
     }
 }
@@ -255,6 +259,10 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         codex_enabled: root["agent_toast"]["codex_enabled"]
             .as_bool()
             .unwrap_or_else(get_codex_installed),
+        version: root["agent_toast"]["version"]
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
     };
@@ -781,6 +789,10 @@ pub fn save_hook_config(
     );
     cn.insert("locale".into(), Value::String(config.locale));
     cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
+    cn.insert(
+        "version".into(),
+        Value::String(env!("CARGO_PKG_VERSION").to_string()),
+    );
     root["agent_toast"] = Value::Object(cn);
 
     // Ensure .claude directory exists
