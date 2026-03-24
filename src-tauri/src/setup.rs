@@ -132,41 +132,116 @@ impl Default for HookConfig {
         Self {
             // 권장 항목
             stop_enabled: true,
-            stop_message: if is_ko { "작업이 완료되었습니다" } else { "Task completed" }.into(),
+            stop_message: if is_ko {
+                "작업이 완료되었습니다"
+            } else {
+                "Task completed"
+            }
+            .into(),
             permission_request_enabled: true,
-            permission_request_message: if is_ko { "권한 요청이 발생했습니다" } else { "Permission requested" }.into(),
+            permission_request_message: if is_ko {
+                "권한 요청이 발생했습니다"
+            } else {
+                "Permission requested"
+            }
+            .into(),
             // Notification 훅
             notification_permission_enabled: false,
-            notification_permission_message: if is_ko { "권한 승인이 필요합니다" } else { "Permission approval required" }.into(),
+            notification_permission_message: if is_ko {
+                "권한 승인이 필요합니다"
+            } else {
+                "Permission approval required"
+            }
+            .into(),
             notification_elicitation_enabled: false,
-            notification_elicitation_message: if is_ko { "입력이 필요합니다" } else { "Input required" }.into(),
+            notification_elicitation_message: if is_ko {
+                "입력이 필요합니다"
+            } else {
+                "Input required"
+            }
+            .into(),
             // 세션 생명주기
             setup_enabled: false,
-            setup_message: if is_ko { "초기화가 실행되었습니다" } else { "Setup executed" }.into(),
+            setup_message: if is_ko {
+                "초기화가 실행되었습니다"
+            } else {
+                "Setup executed"
+            }
+            .into(),
             session_start_enabled: false,
-            session_start_message: if is_ko { "세션이 시작되었습니다" } else { "Session started" }.into(),
+            session_start_message: if is_ko {
+                "세션이 시작되었습니다"
+            } else {
+                "Session started"
+            }
+            .into(),
             session_end_enabled: false,
-            session_end_message: if is_ko { "세션이 종료되었습니다" } else { "Session ended" }.into(),
+            session_end_message: if is_ko {
+                "세션이 종료되었습니다"
+            } else {
+                "Session ended"
+            }
+            .into(),
             // 서브에이전트 생명주기
             subagent_start_enabled: false,
-            subagent_start_message: if is_ko { "서브에이전트가 시작되었습니다" } else { "Subagent started" }.into(),
+            subagent_start_message: if is_ko {
+                "서브에이전트가 시작되었습니다"
+            } else {
+                "Subagent started"
+            }
+            .into(),
             subagent_stop_enabled: false,
-            subagent_stop_message: if is_ko { "서브에이전트가 완료되었습니다" } else { "Subagent completed" }.into(),
+            subagent_stop_message: if is_ko {
+                "서브에이전트가 완료되었습니다"
+            } else {
+                "Subagent completed"
+            }
+            .into(),
             // 사용자 입력
             user_prompt_submit_enabled: false,
-            user_prompt_submit_message: if is_ko { "프롬프트가 제출되었습니다" } else { "Prompt submitted" }.into(),
+            user_prompt_submit_message: if is_ko {
+                "프롬프트가 제출되었습니다"
+            } else {
+                "Prompt submitted"
+            }
+            .into(),
             // 도구 실행 흐름
             pre_tool_use_enabled: false,
-            pre_tool_use_message: if is_ko { "도구 실행이 시작됩니다" } else { "Tool execution starting" }.into(),
+            pre_tool_use_message: if is_ko {
+                "도구 실행이 시작됩니다"
+            } else {
+                "Tool execution starting"
+            }
+            .into(),
             post_tool_use_enabled: false,
-            post_tool_use_message: if is_ko { "도구 실행이 완료되었습니다" } else { "Tool execution completed" }.into(),
+            post_tool_use_message: if is_ko {
+                "도구 실행이 완료되었습니다"
+            } else {
+                "Tool execution completed"
+            }
+            .into(),
             post_tool_use_failure_enabled: false,
-            post_tool_use_failure_message: if is_ko { "도구 실행이 실패했습니다" } else { "Tool execution failed" }.into(),
+            post_tool_use_failure_message: if is_ko {
+                "도구 실행이 실패했습니다"
+            } else {
+                "Tool execution failed"
+            }
+            .into(),
             // 기타
             pre_compact_enabled: false,
-            pre_compact_message: if is_ko { "컨텍스트 압축이 시작됩니다" } else { "Context compaction starting" }.into(),
+            pre_compact_message: if is_ko {
+                "컨텍스트 압축이 시작됩니다"
+            } else {
+                "Context compaction starting"
+            }
+            .into(),
             notification_idle_enabled: false,
-            notification_idle_message: if is_ko { "입력을 기다리고 있습니다" } else { "Waiting for input" }.into(),
+            notification_idle_message: if is_ko {
+                "입력을 기다리고 있습니다"
+            } else {
+                "Waiting for input"
+            }
+            .into(),
             // 설정
             title_display_mode: "project".into(),
             auto_close_on_focus: true,
@@ -264,9 +339,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .as_str()
             .unwrap_or("ko")
             .to_string(),
-        auto_start: root["agent_toast"]["auto_start"]
-            .as_bool()
-            .unwrap_or(true),
+        auto_start: root["agent_toast"]["auto_start"].as_bool().unwrap_or(true),
         codex_enabled: root["agent_toast"]["codex_enabled"]
             .as_bool()
             .unwrap_or_else(get_codex_installed),
@@ -1946,8 +2019,11 @@ mod tests {
 
     #[test]
     fn extract_agent_toast_cmd_product_name_with_space() {
-        let entry =
-            build_hook_entry(None, "C:\\Users\\test\\Agent Toast\\Agent Toast.exe --daemon", None);
+        let entry = build_hook_entry(
+            None,
+            "C:\\Users\\test\\Agent Toast\\Agent Toast.exe --daemon",
+            None,
+        );
         assert!(extract_agent_toast_cmd(&entry).is_some());
     }
 
@@ -1993,7 +2069,10 @@ mod tests {
         // hook 타입은 command
         assert_eq!(entry["hooks"][0]["type"].as_str().unwrap(), "command");
         // command 값
-        assert_eq!(entry["hooks"][0]["command"].as_str().unwrap(), "test-cmd --flag");
+        assert_eq!(
+            entry["hooks"][0]["command"].as_str().unwrap(),
+            "test-cmd --flag"
+        );
         // timeout 값
         assert_eq!(entry["hooks"][0]["timeout"].as_u64().unwrap(), 10);
     }

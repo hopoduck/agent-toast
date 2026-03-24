@@ -207,9 +207,7 @@ fn main() {
         #[cfg(not(windows))]
         {
             let exe = std::env::current_exe().unwrap_or_default();
-            let _ = std::process::Command::new(&exe)
-                .arg("--daemon-run")
-                .spawn();
+            let _ = std::process::Command::new(&exe).arg("--daemon-run").spawn();
         }
         return;
     }
