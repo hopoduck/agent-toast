@@ -73,7 +73,7 @@ const config = ref<HookConfig>({
   notification_position: "bottom_right",
   notification_sound: true,
   notification_monitor: "primary",
-  locale: "ko",
+  locale: navigator.language.startsWith("ko") ? "ko" : "en",
   codex_enabled: false,
 });
 
