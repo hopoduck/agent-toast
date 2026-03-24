@@ -20,24 +20,26 @@ use notification::{
 
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 /// Holds tray menu items so we can update their text at runtime.
 pub struct TrayMenuState {
     pub settings_item: MenuItem<tauri::Wry>,
+    pub restart_item: MenuItem<tauri::Wry>,
     pub quit_item: MenuItem<tauri::Wry>,
 }
 
 /// Update tray menu text to match the current locale.
 pub fn update_tray_locale(app: &AppHandle) {
     let locale = setup::read_locale();
-    let (label_settings, label_quit) = match locale.as_str() {
-        "en" => ("Settings", "Quit"),
-        _ => ("설정", "종료"),
+    let (label_settings, label_restart, label_quit) = match locale.as_str() {
+        "en" => ("Settings", "Restart", "Quit"),
+        _ => ("설정", "재시작", "종료"),
     };
     if let Some(state) = app.try_state::<TrayMenuState>() {
         let _ = state.settings_item.set_text(label_settings);
+        let _ = state.restart_item.set_text(label_restart);
         let _ = state.quit_item.set_text(label_quit);
     }
 }
@@ -267,18 +269,22 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             // System tray
             let tray_handle = handle.clone();
             let locale = setup::read_locale();
-            let (label_settings, label_quit) = match locale.as_str() {
-                "en" => ("Settings", "Quit"),
-                _ => ("설정", "종료"),
+            let (label_settings, label_restart, label_quit) = match locale.as_str() {
+                "en" => ("Settings", "Restart", "Quit"),
+                _ => ("설정", "재시작", "종료"),
             };
             let settings_item = MenuItemBuilder::with_id("settings", label_settings).build(app)?;
+            let restart_item = MenuItemBuilder::with_id("restart", label_restart).build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", label_quit).build(app)?;
             app.manage(TrayMenuState {
                 settings_item: settings_item.clone(),
+                restart_item: restart_item.clone(),
                 quit_item: quit_item.clone(),
             });
             let menu = MenuBuilder::new(app)
                 .item(&settings_item)
+                .separator()
+                .item(&restart_item)
                 .item(&quit_item)
                 .build()?;
             // TODO: Tauri ICO 파싱 버그로 인해 트레이 아이콘 별도 로드 필요
@@ -288,14 +294,27 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             // - 관련 이슈: https://github.com/tauri-apps/tauri/issues/14596
             let tray_icon_bytes = include_bytes!("../icons/tray.ico");
             let tray_icon = Image::from_bytes(tray_icon_bytes).expect("failed to load tray icon");
+            let click_handle = tray_handle.clone();
             TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu)
+                .show_menu_on_left_click(false)
                 .tooltip("Agent Toast")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "settings" => open_setup_window(app),
+                    "restart" => app.restart(),
                     "quit" => app.exit(0),
                     _ => {}
+                })
+                .on_tray_icon_event(move |_tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        open_setup_window(&click_handle);
+                    }
                 })
                 .build(&tray_handle)?;
 
