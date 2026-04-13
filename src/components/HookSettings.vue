@@ -2,24 +2,11 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { invoke } from "@tauri-apps/api/core";
-import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { HookConfig } from "../types";
 
 const { t } = useI18n();
 const config = defineModel<HookConfig>({ required: true });
-const codexInstalled = ref(false);
-
-onMounted(async () => {
-  try {
-    codexInstalled.value = await invoke<boolean>("get_codex_installed");
-    // Codex가 설치되어 있으면 기본값으로 활성화
-    if (codexInstalled.value && config.value) {
-      config.value.codex_enabled = true;
-    }
-  } catch (_) { /* ignore */ }
-});
 
 const hooks = [
   // 권장 항목
@@ -102,9 +89,6 @@ const hooks = [
             <span class="text-xs text-muted-foreground">{{ t('hooks.codex_desc') }}</span>
           </div>
         </label>
-        <p v-if="!codexInstalled" class="text-xs text-muted-foreground px-2.5 py-1.5 bg-muted rounded-md">
-          {{ t('hooks.codex_not_installed') }}
-        </p>
       </div>
     </div>
 

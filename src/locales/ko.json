@@ -112,8 +112,7 @@
     "claude_code_section": "Claude Code",
     "codex_section": "Codex",
     "codex_name": "Codex notify",
-    "codex_desc": "에이전트 턴 완료 시 알림",
-    "codex_not_installed": "Codex가 설치되지 않았습니다. Codex CLI를 설치하면 이 옵션을 사용할 수 있습니다."
+    "codex_desc": "에이전트 턴 완료 시 알림"
   },
   "about": {
     "description": "Agent Toast는 Claude Code(또는 Codex CLI)에서 작업 완료, 사용자 입력 필요 등의 이벤트가 발생하면 데스크톱 알림을 표시하는 Windows 앱입니다.",

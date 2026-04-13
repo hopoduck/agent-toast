@@ -258,7 +258,6 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::get_saved_exe_path,
             setup::open_settings_file,
             setup::is_hook_config_saved,
-            setup::get_codex_installed,
             get_monitor_list,
             updater::mark_update_pending
         ])

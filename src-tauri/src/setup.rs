@@ -342,7 +342,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         auto_start: root["agent_toast"]["auto_start"].as_bool().unwrap_or(true),
         codex_enabled: root["agent_toast"]["codex_enabled"]
             .as_bool()
-            .unwrap_or_else(get_codex_installed),
+            .unwrap_or(false),
         version: root["agent_toast"]["version"]
             .as_str()
             .unwrap_or("")
@@ -1063,15 +1063,6 @@ fn save_codex_config(enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Codex CLI가 설치되어 있는지 확인
-#[tauri::command]
-pub fn get_codex_installed() -> bool {
-    let exe_name = if cfg!(windows) { "codex.exe" } else { "codex" };
-    std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(exe_name).is_file()))
-        .unwrap_or(false)
-}
-
 /// Extract the command string from a hook entry if it belongs to agent-toast.
 /// Uses case-insensitive matching and safe `.get()` access to handle both
 /// "agent-toast" (cargo name) and "Agent Toast" (productName / NSIS install).
@@ -1645,17 +1636,6 @@ mod tests {
         assert!(!config.notification_idle_enabled);
     }
 
-    #[test]
-    fn parse_codex_enabled_default_based_on_install() {
-        // codex_enabled가 없으면 get_codex_installed() 결과에 따름
-        let json = r#"{"agent_toast": {}}"#;
-        let config = parse_hook_config_from_json(json);
-        // 테스트 환경에서는 codex가 설치되어 있지 않을 가능성이 높음
-        // 값 자체보다 파싱이 실패하지 않는지 확인
-        // 파싱이 실패하지 않는지만 확인 (codex 설치 여부에 따라 값이 달라짐)
-        let _ = config.codex_enabled;
-    }
-
     // ── build_hook_entry variations ──
 
     #[test]
@@ -1779,14 +1759,6 @@ mod tests {
         // 따옴표 제거하면 exe_path_unquoted와 같아야 함
         let unquoted = &path[1..path.len() - 1];
         assert_eq!(unquoted, exe_path_unquoted());
-    }
-
-    // ── get_codex_installed tests ──
-
-    #[test]
-    fn get_codex_installed_returns_bool() {
-        // 테스트 환경에 codex가 없어도 패닉 없이 bool 반환
-        let _ = get_codex_installed();
     }
 
     // ── parse_hook_config_from_json: individual hook type messages ──
