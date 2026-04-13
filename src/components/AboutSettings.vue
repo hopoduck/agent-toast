@@ -128,7 +128,7 @@ onMounted(async () => {
 <template>
   <div class="flex flex-1 min-h-0 flex-col gap-5 overflow-y-auto">
     <!-- Header with Logo -->
-    <div class="flex items-center gap-4">
+    <div class="anim-item flex items-center gap-4" style="animation-delay:0ms">
       <img :src="logoPng" width="56" height="56" alt="Agent Toast" class="rounded-xl shadow-sm" />
       <div class="flex flex-col gap-1">
         <h2 class="text-2xl font-bold text-foreground m-0">Agent Toast</h2>
@@ -149,10 +149,10 @@ onMounted(async () => {
       </div>
     </div>
 
-    <p class="text-sm text-muted-foreground leading-relaxed m-0">{{ t('about.description') }}</p>
+    <p class="anim-item text-sm text-muted-foreground leading-relaxed m-0" style="animation-delay:50ms">{{ t('about.description') }}</p>
 
     <!-- Update Section -->
-    <div class="flex flex-col gap-2">
+    <div class="anim-item flex flex-col gap-2" style="animation-delay:100ms">
       <!-- Status message -->
       <span
         v-if="statusMessage"
@@ -199,7 +199,8 @@ onMounted(async () => {
 
     <!-- Star Request -->
     <button
-      class="star-cta group relative overflow-hidden rounded-xl border border-primary/15 dark:border-primary/20 p-[1px] transition-all duration-300 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 text-left w-full cursor-pointer bg-transparent"
+      class="anim-item star-cta group relative overflow-hidden rounded-xl border border-primary/15 dark:border-primary/20 p-[1px] transition-all duration-300 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 text-left w-full cursor-pointer bg-transparent"
+      style="animation-delay:150ms"
       @click="onStarClick"
     >
       <div class="relative flex items-center gap-3 rounded-[11px] bg-gradient-to-r from-primary/[0.06] via-accent/[0.04] to-transparent dark:from-primary/[0.1] dark:via-accent/[0.06] dark:to-transparent px-4 py-3.5">
@@ -224,7 +225,7 @@ onMounted(async () => {
     </button>
 
     <!-- Footer -->
-    <div class="mt-auto pt-2">
+    <div class="anim-item mt-auto pt-2" style="animation-delay:200ms">
       <p class="text-xs text-muted-foreground/50 m-0">{{ t('about.made_with') }}</p>
     </div>
   </div>

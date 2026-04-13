@@ -282,6 +282,16 @@ body {
   background: transparent;
 }
 
+/* Mount fade-up animation */
+.anim-item {
+  animation: anim-fade-up 0.28s ease both;
+}
+
+@keyframes anim-fade-up {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
 /* Dismiss progress bar animation */
 @keyframes shrink {
   from {

@@ -57,12 +57,13 @@ onMounted(async () => {
 
 <template>
   <div class="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto">
-    <p class="text-[13px] text-muted-foreground">{{ t("general.desc") }}</p>
+    <p class="anim-item text-[13px] text-muted-foreground" style="animation-delay:0ms">{{ t("general.desc") }}</p>
 
     <div class="flex flex-col gap-2">
       <!-- Language -->
       <div
-        class="flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        style="animation-delay:30ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.language")
@@ -80,7 +81,8 @@ onMounted(async () => {
 
       <!-- Title display -->
       <div
-        class="flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        style="animation-delay:60ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.title_display")
@@ -103,7 +105,8 @@ onMounted(async () => {
 
       <!-- Auto dismiss -->
       <div
-        class="flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        style="animation-delay:90ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.auto_dismiss")
@@ -130,7 +133,8 @@ onMounted(async () => {
 
       <!-- Position -->
       <div
-        class="flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        style="animation-delay:120ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.position")
@@ -158,7 +162,8 @@ onMounted(async () => {
 
       <!-- Monitor -->
       <div
-        class="flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-[10px] px-3.5 py-3"
+        style="animation-delay:150ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.monitor")
@@ -181,7 +186,8 @@ onMounted(async () => {
 
       <!-- Auto close on focus -->
       <div
-        class="flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+        style="animation-delay:180ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.auto_close_focus")
@@ -191,7 +197,8 @@ onMounted(async () => {
 
       <!-- Sound -->
       <div
-        class="flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+        style="animation-delay:210ms"
       >
         <span class="text-sm font-medium text-foreground">{{
           t("general.sound")
@@ -201,7 +208,8 @@ onMounted(async () => {
 
       <!-- Auto start -->
       <div
-        class="flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+        class="anim-item flex items-center justify-between bg-card border rounded-lg px-3.5 py-3"
+        style="animation-delay:240ms"
       >
         <div class="flex flex-col gap-0.5">
           <span class="text-sm font-medium text-foreground">{{
@@ -215,7 +223,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <Button variant="outline" class="w-full" @click="emit('test-notification')">
+    <Button variant="outline" class="anim-item w-full" style="animation-delay:270ms" @click="emit('test-notification')">
       {{ t("general.test_notification") }}
     </Button>
   </div>

@@ -36,16 +36,17 @@ const hooks = [
 
 <template>
   <div class="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto">
-    <p class="text-[13px] text-muted-foreground">{{ t('hooks.desc') }}</p>
+    <p class="anim-item text-[13px] text-muted-foreground" style="animation-delay:0ms">{{ t('hooks.desc') }}</p>
 
     <!-- Claude Code Section -->
-    <div class="flex flex-col gap-2.5">
+    <div class="anim-item flex flex-col gap-2.5" style="animation-delay:30ms">
       <h3 class="text-sm font-semibold text-section-claude">{{ t('hooks.claude_code_section') }}</h3>
       <div class="flex flex-col gap-3">
         <div
-          v-for="hook in hooks"
+          v-for="(hook, i) in hooks"
           :key="hook.key"
-          class="flex flex-col gap-2.5 bg-card border rounded-[10px] px-3.5 py-3"
+          class="anim-item flex flex-col gap-2.5 bg-card border rounded-[10px] px-3.5 py-3"
+          :style="`animation-delay:${60 + i * 15}ms`"
         >
           <label class="flex items-start gap-2.5 cursor-pointer">
             <Checkbox
@@ -75,7 +76,7 @@ const hooks = [
     </div>
 
     <!-- Codex Section -->
-    <div class="flex flex-col gap-2.5">
+    <div class="anim-item flex flex-col gap-2.5" style="animation-delay:285ms">
       <h3 class="text-sm font-semibold text-section-codex">{{ t('hooks.codex_section') }}</h3>
       <div class="flex flex-col gap-2.5 bg-card border rounded-[10px] px-3.5 py-3">
         <label class="flex items-start gap-2.5 cursor-pointer">
@@ -92,6 +93,6 @@ const hooks = [
       </div>
     </div>
 
-    <p class="text-xs text-muted-foreground px-3 py-2 bg-muted/50 border border-border rounded-md">{{ t('hooks.notice') }}</p>
+    <p class="anim-item text-xs text-muted-foreground px-3 py-2 bg-muted/50 border border-border rounded-md" style="animation-delay:310ms">{{ t('hooks.notice') }}</p>
   </div>
 </template>

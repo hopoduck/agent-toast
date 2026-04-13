@@ -18,8 +18,8 @@ const steps = [
       <div
         v-for="(step, i) in steps"
         :key="step.key"
-        class="step-card group relative overflow-hidden rounded-xl border border-border bg-card px-4 py-3.5 transition-all duration-200 hover:border-primary/35 hover:shadow-sm"
-        :class="`step-${i}`"
+        class="anim-item group relative overflow-hidden rounded-xl border border-border bg-card px-4 py-3.5 transition-all duration-200 hover:border-primary/35 hover:shadow-sm"
+        :style="`animation-delay:${i * 70}ms`"
       >
         <!-- Ghost watermark number -->
         <span
@@ -45,26 +45,3 @@ const steps = [
   </div>
 </template>
 
-<style scoped>
-/* Staggered mount animation */
-.step-card,
-.feature-card {
-  animation: fadeUp 0.3s ease both;
-}
-
-.step-0 { animation-delay: 0ms; }
-.step-1 { animation-delay: 70ms; }
-.step-2 { animation-delay: 140ms; }
-
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-</style>
