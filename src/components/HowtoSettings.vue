@@ -12,6 +12,9 @@ const steps = [
 
 <template>
   <div class="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+    <p class="anim-item text-[13px] text-muted-foreground" style="animation-delay:0ms">
+      {{ t("about.howto_desc") }}
+    </p>
 
     <!-- Steps -->
     <div class="flex flex-col gap-2">
@@ -19,7 +22,7 @@ const steps = [
         v-for="(step, i) in steps"
         :key="step.key"
         class="anim-item group relative overflow-hidden rounded-xl border border-border bg-card px-4 py-3.5 transition-all duration-200 hover:border-primary/35 hover:shadow-sm"
-        :style="`animation-delay:${i * 70}ms`"
+        :style="`animation-delay:${20 + i * 70}ms`"
       >
         <!-- Ghost watermark number -->
         <span

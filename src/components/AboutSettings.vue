@@ -159,7 +159,7 @@ onMounted(async () => {
         class="text-sm"
         :class="{
           'text-muted-foreground': updateStatus === 'checking' || updateStatus === 'up-to-date',
-          'text-green-600 dark:text-green-400': updateStatus === 'available' || updateStatus === 'ready'
+          'text-event-success': updateStatus === 'available' || updateStatus === 'ready'
         }"
       >
         {{ statusMessage }}

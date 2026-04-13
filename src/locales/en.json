@@ -125,6 +125,7 @@
     "feature_multi_title": "Multi-Monitor Support",
     "feature_multi_desc": "Display notifications on your preferred monitor and position.",
     "howto_title": "How to Use",
+    "howto_desc": "How to set up Agent Toast to receive Claude Code event notifications.",
     "howto_step1_title": "Select Hook Events",
     "howto_step1_desc": "Enable the events you want notifications for in the 'Hooks' tab.",
     "howto_step2_title": "Save Settings",

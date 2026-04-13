@@ -127,6 +127,7 @@
     "feature_multi_title": "멀티 모니터 지원",
     "feature_multi_desc": "원하는 모니터와 위치에 알림을 표시할 수 있습니다.",
     "howto_title": "사용 방법",
+    "howto_desc": "Claude Code 이벤트 알림을 받기 위한 설정 방법입니다.",
     "howto_step1_title": "훅 이벤트 선택",
     "howto_step1_desc": "'훅 설정' 탭에서 알림을 받고 싶은 이벤트를 활성화하세요.",
     "howto_step2_title": "설정 저장",
