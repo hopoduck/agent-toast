@@ -92,6 +92,6 @@ const hooks = [
       </div>
     </div>
 
-    <p class="text-xs text-muted-foreground px-3 py-2 bg-muted/50 border border-border rounded-md [&_code]:bg-secondary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[11px] [&_code]:font-medium" v-html="t('hooks.notice', { code: '<code>/hooks</code>' })"></p>
+    <p class="text-xs text-muted-foreground px-3 py-2 bg-muted/50 border border-border rounded-md">{{ t('hooks.notice') }}</p>
   </div>
 </template>
