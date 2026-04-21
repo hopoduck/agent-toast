@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod http_server;
 mod notification;
 pub mod pipe;
 pub mod setup;
@@ -85,7 +86,11 @@ fn close_notify(id: String, app: AppHandle) {
 #[tauri::command]
 fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
-    win32::activate_window(hwnd);
+    if hwnd != 0 {
+        win32::activate_window(hwnd);
+    } else {
+        log::debug!("[ACTIVATE] hwnd=0, skipping window activation (likely remote)");
+    }
     let state = app.state::<NotificationManagerState>();
     close_notification(&app, &state, &id);
 }
@@ -115,6 +120,7 @@ fn test_notification(app: AppHandle) {
         title_hint: Some(test_title.to_string()),
         process_tree: Some(vec![]),
         source: "claude".into(),
+        hostname: None,
     };
     log::debug!("[TEST] Spawning notification thread for event={}", event);
     std::thread::spawn(move || {
@@ -323,6 +329,18 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             pipe::start_server(move |req| {
                 show_notification(&pipe_handle, &pipe_state, req);
             });
+
+            // Start HTTP receiver if enabled in settings
+            if setup::read_http_enabled() {
+                let http_handle = handle.clone();
+                let http_state = state.clone();
+                let bind_addr = setup::read_http_bind_addr();
+                http_server::start_server(&bind_addr, move |req| {
+                    show_notification(&http_handle, &http_state, req);
+                });
+            } else {
+                log::info!("[HTTP] disabled via settings");
+            }
 
             // FR-3: Event-based foreground change detection via SetWinEventHook
             let focus_handle = handle.clone();

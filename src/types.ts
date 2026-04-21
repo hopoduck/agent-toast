@@ -7,6 +7,8 @@ export interface NotificationData {
   process_tree: number[];
   auto_dismiss_seconds: number;
   source: string;
+  hostname: string | null;
+  show_hostname: boolean;
 }
 
 export interface HookConfig {
@@ -49,6 +51,9 @@ export interface HookConfig {
   locale: string;
   auto_start: boolean;
   codex_enabled: boolean;
+  http_enabled: boolean;
+  http_bind_addr: string;
+  show_hostname: boolean;
 }
 
 export interface MonitorInfo {

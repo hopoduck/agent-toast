@@ -148,6 +148,22 @@
     "update_completed": "Update Complete",
     "update_completed_message": "Updated to v{version}!"
   },
+  "remote": {
+    "title": "Remote Notifications",
+    "enabled": "Enable HTTP receiver",
+    "bindAddr": "Bind address",
+    "showHostname": "Show hostname",
+    "snippetBtn": "Generate server setup command",
+    "snippet": {
+      "urlLabel": "Desktop URL (as seen from server)",
+      "urlHint": "Tailscale/LAN IP, or http://localhost:8787 if using SSH -R",
+      "hostnameLabel": "Hostname label (optional)",
+      "installHeader": "Install command",
+      "hookHeader": "Hook command (reference)",
+      "copyBtn": "Copy",
+      "guideTitle": "Installation guide"
+    }
+  },
   "defaults": {
     "stop_message": "Task completed",
     "notification_permission_message": "Permission approval required",

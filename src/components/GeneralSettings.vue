@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   NumberField,
   NumberFieldContent,
@@ -16,10 +17,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { invoke } from "@tauri-apps/api/core";
-import { Eye, MonitorDot, SlidersHorizontal } from "lucide-vue-next";
+import { Eye, MonitorDot, Radio, SlidersHorizontal } from "lucide-vue-next";
 import { onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { HookConfig, MonitorInfo } from "../types";
+import RemoteSnippetDialog from "./RemoteSnippetDialog.vue";
 
 const { t, locale } = useI18n();
 
@@ -42,6 +44,7 @@ const emit = defineEmits<{
 }>();
 
 const monitors = ref<MonitorInfo[]>([]);
+const showSnippet = ref(false);
 
 onMounted(async () => {
   try {
@@ -211,14 +214,59 @@ onMounted(async () => {
       </div>
     </section>
 
+    <!-- Section: Remote Notifications -->
+    <section class="anim-item flex flex-col gap-1.5" style="animation-delay:140ms">
+      <div class="flex items-center gap-1.5 px-1">
+        <Radio :size="12" class="text-muted-foreground/50" />
+        <span class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/50">{{ t("remote.title") }}</span>
+      </div>
+      <div class="rounded-[12px] border border-border overflow-hidden divide-y divide-border">
+        <!-- HTTP enabled -->
+        <div class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100">
+          <span class="text-sm font-medium text-foreground">{{ t("remote.enabled") }}</span>
+          <Switch v-model="config.http_enabled" />
+        </div>
+
+        <!-- Bind address (visible only when enabled) -->
+        <div
+          v-if="config.http_enabled"
+          class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
+        >
+          <span class="text-sm font-medium text-foreground shrink-0">{{ t("remote.bindAddr") }}</span>
+          <Input
+            v-model="config.http_bind_addr"
+            placeholder="0.0.0.0:8787"
+            class="h-7 text-xs w-[160px]"
+          />
+        </div>
+
+        <!-- Show hostname -->
+        <div class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100">
+          <span class="text-sm font-medium text-foreground">{{ t("remote.showHostname") }}</span>
+          <Switch v-model="config.show_hostname" />
+        </div>
+      </div>
+
+      <!-- Snippet generator button -->
+      <Button
+        variant="outline"
+        class="w-full"
+        @click="showSnippet = true"
+      >
+        {{ t("remote.snippetBtn") }}
+      </Button>
+    </section>
+
     <!-- Test notification button -->
     <Button
       variant="outline"
       class="anim-item w-full"
-      style="animation-delay:140ms"
+      style="animation-delay:180ms"
       @click="emit('test-notification')"
     >
       {{ t("general.test_notification") }}
     </Button>
+
+    <RemoteSnippetDialog v-model:open="showSnippet" />
   </div>
 </template>

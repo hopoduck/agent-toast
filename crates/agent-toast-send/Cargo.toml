@@ -1,0 +1,25 @@
+[package]
+name = "agent-toast-send"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "CLI to send remote notifications to Agent Toast desktop"
+
+[[bin]]
+name = "agent-toast-send"
+path = "src/main.rs"
+
+[dependencies]
+agent-toast-core = { path = "../agent-toast-core" }
+clap = { version = "4", features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+ureq = { version = "2", default-features = false }
+hostname = "0.4"
+dirs = "5"
+shell-escape = "0.1"
+
+[dev-dependencies]
+tiny_http = "0.12"
+tempfile = "3"

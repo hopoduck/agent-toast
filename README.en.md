@@ -58,6 +58,55 @@ pnpm install
 pnpm tauri build
 ```
 
+## 🌐 Remote Notifications (Linux Servers)
+
+You can configure Claude Code hooks running on a remote Linux server to send notifications to Agent Toast on your Windows desktop.
+
+### 1. Desktop: Enable HTTP Receiver
+
+Open the Agent Toast settings window → **Remote Notifications** → toggle **Enable HTTP receiver** ON. The default binding is `0.0.0.0:8787` and can be changed in settings.
+
+Windows Firewall may prompt for permission on first use. If you're using Tailscale or SSH port forwarding, allowing **private networks** only is sufficient.
+
+### 2. Server: Install `agent-toast-send` Binary
+
+#### x86_64
+```bash
+curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-x86_64 \
+  -o ~/.local/bin/agent-toast-send
+chmod +x ~/.local/bin/agent-toast-send
+```
+
+#### aarch64 (Arm64, Raspberry Pi / Arm VPS)
+```bash
+curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-aarch64 \
+  -o ~/.local/bin/agent-toast-send
+chmod +x ~/.local/bin/agent-toast-send
+```
+
+### 3. Register Hooks
+
+```bash
+agent-toast-send init --url http://<desktop-ip>:8787 [--hostname "prod"]
+```
+
+- `<desktop-ip>` is the address reachable from the server to your desktop (Tailscale, LAN, SSH `-R`). Network reachability is the user's responsibility and is not managed by the app.
+- `--hostname` is optional and sets the label shown in the toast. Omit to auto-detect via `hostname(1)`.
+
+Default hooks registered:
+- **Stop** — task completion notification
+- **Notification (permission_prompt)** — permission request notification
+
+For finer hook customization, edit `~/.claude/settings.json` on the server directly.
+
+### Uninstall
+
+```bash
+agent-toast-send uninstall
+```
+
+Only removes agent-toast related hooks; all other hooks are preserved.
+
 ## 🚀 Usage
 
 ### 1. Open Settings

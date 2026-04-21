@@ -13,20 +13,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 pnpm install                # Install dependencies
 pnpm tauri dev              # Full dev mode with Vite hot reload (port 1420)
-pnpm tauri build            # Production build → src-tauri/target/release/agent-toast.exe
+pnpm tauri build            # Production build → target/release/agent-toast.exe (workspace root)
 pnpm build                  # vue-tsc --noEmit (type check) + vite build (frontend only)
 pnpm release                # Release build with updater artifacts (requires TAURI_SIGNING_PRIVATE_KEY in .env)
 ```
 
-### Lint & Format
+### Lint & Format (workspace root)
 
 ```bash
-# Rust
-cd src-tauri && cargo fmt                                  # Code formatting
-cd src-tauri && cargo fmt --check                          # Format check
-cd src-tauri && cargo clippy --all-targets -- -D warnings  # Lint check (CI enforces -D warnings)
-cd src-tauri && cargo test                                 # Run all tests
-cd src-tauri && cargo test <test_name>                     # Run a specific test
+# Rust (workspace)
+cargo fmt --check --all                                    # Format check
+cargo clippy --workspace --all-targets -- -D warnings      # Lint check (CI enforces -D warnings)
+cargo test --workspace                                     # Run all tests
+cargo test -p <crate> <test_name>                          # Run a specific test in a specific crate
 
 # TypeScript
 pnpm vue-tsc --noEmit                                      # Type check only
@@ -34,7 +33,7 @@ pnpm vue-tsc --noEmit                                      # Type check only
 
 ### CI Checks (GitHub Actions)
 
-On push/PR to `master`, the `check.yml` workflow runs: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, and `pnpm vue-tsc --noEmit`. All must pass before merge.
+On push/PR to `master`, the `check.yml` workflow runs on `windows-latest`: `cargo fmt --check --all`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, `pnpm vue-tsc --noEmit`. A second `check-send-linux` job on `ubuntu-latest` additionally verifies that `agent-toast-send` builds for `x86_64-unknown-linux-musl`. All must pass before merge.
 
 ## Architecture
 
@@ -57,17 +56,37 @@ On push/PR to `master`, the `check.yml` workflow runs: `cargo fmt --check`, `car
 
 Single `index.html` + `main.ts` serves both notification and setup windows. Window label (`setup` vs `notify-*`) determines which Vue component mounts — no router needed.
 
-## Rust Backend (src-tauri/src/)
+## Cargo Workspace Layout
+
+```
+Cargo.toml                          # workspace root
+crates/
+  agent-toast-core/                 # shared types + hook-config JSON merge
+    src/lib.rs
+    src/wire.rs                     # NotifyRequest (+ hostname), WIRE_VERSION
+    src/hook_config.rs              # merge_agent_toast_hooks, HookEntry, is_agent_toast_cmd
+  agent-toast-desktop/              # Windows-only Tauri app (was src-tauri/)
+    src/main.rs, lib.rs, cli.rs, pipe.rs, http_server.rs,
+    notification.rs, win32.rs, setup.rs, sound.rs, updater.rs
+    tauri.conf.json, tauri.release.conf.json, icons/, capabilities/
+  agent-toast-send/                 # cross-platform CLI for remote Linux servers
+    src/main.rs                     # send / init / uninstall subcommands
+    tests/send_integration.rs, tests/init_integration.rs
+src/                                # Vue 3 + TypeScript frontend (unchanged)
+```
+
+### Rust Backend Modules (`crates/agent-toast-desktop/src/`)
 
 | Module            | Purpose                                                                                             |
 | ----------------- | --------------------------------------------------------------------------------------------------- |
 | `main.rs`         | CLI entry, single-instance routing via pipe, parent PID auto-detection                              |
-| `lib.rs`          | Tauri app setup, command registration, tray icon                                                    |
-| `cli.rs`          | clap arg parsing, `NotifyRequest` struct                                                            |
-| `pipe.rs`         | Named Pipe server/client (Windows-only, stubs for other OS)                                         |
-| `notification.rs` | Notification lifecycle, window creation, 4-corner positioning with DPI scaling                      |
+| `lib.rs`          | Tauri app setup, command registration, tray icon, HTTP server wiring                                |
+| `cli.rs`          | clap arg parsing (re-exports `NotifyRequest` from `agent-toast-core`)                               |
+| `pipe.rs`         | Named Pipe server/client (Windows-only, stubs for other OS) — local transport                       |
+| `http_server.rs`  | `tiny_http` receiver for remote notifications — runs when `http_enabled=true`                       |
+| `notification.rs` | Notification lifecycle, window creation, 4-corner positioning with DPI scaling, `RateLimiter` (10/s burst 10) |
 | `win32.rs`        | Process tree walking, focus detection, window activation (Windows-only)                             |
-| `setup.rs`        | Settings file I/O (`~/.claude/settings.json`), hook config builder, preserves non-agent-toast hooks |
+| `setup.rs`        | Settings file I/O (`~/.claude/settings.json`), hook config builder (delegates JSON merge to core)   |
 | `sound.rs`        | System notification sound via `PlaySoundW`                                                          |
 | `updater.rs`      | Auto-update check via GitHub API (12-hour interval), update notification                            |
 
@@ -113,7 +132,7 @@ Events: `task_complete`, `user_input_required`, `error`
 
 ## Configuration Files
 
-### App Config (src-tauri/)
+### App Config (`crates/agent-toast-desktop/`)
 
 - `tauri.conf.json`: Tauri app settings (window size, permissions, build config)
 - `tauri.release.conf.json`: Release-only overrides (enables `createUpdaterArtifacts`)

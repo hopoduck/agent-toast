@@ -77,6 +77,9 @@ const config = ref<HookConfig>({
   locale: navigator.language.startsWith("ko") ? "ko" : "en",
   auto_start: true,
   codex_enabled: false,
+  http_enabled: false,
+  http_bind_addr: "0.0.0.0:8787",
+  show_hostname: true,
 });
 
 watch(
@@ -207,6 +210,9 @@ function onReset() {
     locale: currentLocale,
     auto_start: true,
     codex_enabled: false,
+    http_enabled: false,
+    http_bind_addr: "0.0.0.0:8787",
+    show_hostname: true,
   };
 }
 

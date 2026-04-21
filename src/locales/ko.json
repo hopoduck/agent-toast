@@ -150,6 +150,22 @@
     "update_completed": "업데이트 완료",
     "update_completed_message": "v{version}(으)로 업데이트되었습니다!"
   },
+  "remote": {
+    "title": "원격 알림",
+    "enabled": "HTTP 수신 활성화",
+    "bindAddr": "바인딩 주소",
+    "showHostname": "호스트명 표시",
+    "snippetBtn": "서버 설정 명령 생성",
+    "snippet": {
+      "urlLabel": "데스크톱 URL (서버에서 접근)",
+      "urlHint": "Tailscale IP, LAN IP, 또는 SSH -R 사용 시 http://localhost:8787",
+      "hostnameLabel": "호스트명 라벨(선택)",
+      "installHeader": "설치 명령",
+      "hookHeader": "훅 실행 명령 (참고)",
+      "copyBtn": "복사",
+      "guideTitle": "설치 가이드"
+    }
+  },
   "defaults": {
     "stop_message": "작업이 완료되었습니다",
     "notification_permission_message": "권한 승인이 필요합니다",

@@ -58,6 +58,55 @@ pnpm install
 pnpm tauri build
 ```
 
+## 🌐 원격 알림 (Linux 서버)
+
+원격 Linux 서버에서 실행하는 Claude Code 훅이 Windows 데스크톱의 Agent Toast 에 알림을 띄우도록 설정할 수 있습니다.
+
+### 1. 데스크톱: HTTP 수신 활성화
+
+Agent Toast 설정 창 → **원격 알림** → **HTTP 수신 활성화** 토글 ON. 기본 바인딩은 `0.0.0.0:8787` 이며 설정에서 변경 가능.
+
+Windows 방화벽이 처음 허용 여부를 물을 수 있습니다. Tailscale 이나 SSH 포트 포워딩 사용 시 **개인 네트워크** 만 허용해도 충분합니다.
+
+### 2. 서버: `agent-toast-send` 바이너리 설치
+
+#### x86_64
+```bash
+curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-x86_64 \
+  -o ~/.local/bin/agent-toast-send
+chmod +x ~/.local/bin/agent-toast-send
+```
+
+#### aarch64 (Arm64, 라즈베리파이 / Arm VPS)
+```bash
+curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-aarch64 \
+  -o ~/.local/bin/agent-toast-send
+chmod +x ~/.local/bin/agent-toast-send
+```
+
+### 3. 훅 등록
+
+```bash
+agent-toast-send init --url http://<desktop-ip>:8787 [--hostname "prod"]
+```
+
+- `<desktop-ip>` 는 서버에서 데스크톱에 도달 가능한 주소 (Tailscale, LAN, SSH `-R`). 네트워크 도달성은 사용자 책임이며 앱이 관리하지 않습니다.
+- `--hostname` 은 선택 사항으로, 토스트에 표시되는 라벨입니다. 생략 시 `hostname(1)` 자동 감지.
+
+등록된 기본 훅:
+- **Stop** — 작업 완료 알림
+- **Notification (permission_prompt)** — 권한 요청 알림
+
+더 세밀한 훅 커스터마이즈는 서버의 `~/.claude/settings.json` 을 직접 편집하면 됩니다.
+
+### 해제
+
+```bash
+agent-toast-send uninstall
+```
+
+agent-toast 관련 훅만 제거하고 다른 훅은 보존합니다.
+
 ## 🚀 사용법
 
 ### 1. 설정 창 열기

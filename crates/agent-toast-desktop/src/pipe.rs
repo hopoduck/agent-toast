@@ -166,6 +166,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -195,6 +196,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -223,6 +225,7 @@ mod tests {
             title_hint: Some("my-project".to_string()),
             process_tree: Some(vec![100, 200, 300, 400]),
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -241,6 +244,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -266,6 +270,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -287,6 +292,7 @@ mod tests {
                 title_hint: None,
                 process_tree: None,
                 source: source.into(),
+                hostname: None,
             };
 
             let data = serde_json::to_vec(&req).unwrap();
@@ -304,6 +310,7 @@ mod tests {
             title_hint: Some("my-awesome-project".to_string()),
             process_tree: Some(vec![1000, 2000, 3000, 4000, 5000]),
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -338,6 +345,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -355,6 +363,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -372,6 +381,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -396,6 +406,7 @@ mod tests {
             title_hint: Some("B".repeat(1000)),
             process_tree: Some(big_tree),
             source: "claude".into(),
+            hostname: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -489,6 +500,7 @@ mod tests {
             title_hint: Some("project-dir".to_string()),
             process_tree: Some(vec![1, 2, 3]),
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let len = (data.len() as u32).to_le_bytes();
@@ -530,6 +542,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -545,6 +558,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -560,6 +574,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -575,6 +590,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -590,6 +606,7 @@ mod tests {
             title_hint: None,
             process_tree: Some(vec![42]),
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -606,6 +623,7 @@ mod tests {
             title_hint: None,
             process_tree: Some(vec![]),
             source: "claude".into(),
+            hostname: None,
         };
         let req_none = NotifyRequest {
             pid: 1,
@@ -614,6 +632,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
 
         let data_empty = serde_json::to_vec(&req_empty).unwrap();
@@ -635,6 +654,7 @@ mod tests {
             title_hint: None,
             process_tree: Some(vec![0, 0, 0]),
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -650,6 +670,7 @@ mod tests {
             title_hint: None,
             process_tree: Some(vec![u32::MAX]),
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -666,6 +687,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let len = data.len() as u32;
@@ -684,6 +706,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -700,6 +723,7 @@ mod tests {
             title_hint: Some(long_hint.clone()),
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();

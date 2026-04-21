@@ -1,14 +1,14 @@
 {
   "name": "agent-toast",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release": "dotenv -- tauri build --config src-tauri/tauri.release.conf.json"
+    "release": "dotenv -- tauri build --config crates/agent-toast-desktop/tauri.release.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
