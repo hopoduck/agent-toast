@@ -11,10 +11,10 @@
     "release": "dotenv -- tauri build --config crates/agent-toast-desktop/tauri.release.conf.json"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-process": "^2",
-    "@tauri-apps/plugin-updater": "~2",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-opener": "^2.5.3",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "~2.10.1",
     "@vueuse/core": "^14.2.0",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
@@ -23,14 +23,14 @@
     "pretendard": "^1.3.9",
     "reka-ui": "^2.8.0",
     "tailwind-merge": "^3.4.0",
-    "tailwindcss": "^4.1.18",
+    "tailwindcss": "^4.2.4",
     "vue": "^3.5.13",
     "vue-i18n": "^11.2.8",
     "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/cli": "^2",
+    "@tailwindcss/vite": "^4.2.4",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^25.2.0",
     "@vitejs/plugin-vue": "^5.2.1",
