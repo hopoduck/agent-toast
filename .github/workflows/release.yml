@@ -14,7 +14,26 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Resolve tag and prerelease flag
+        id: meta
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.version || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" =~ -(rc|beta|alpha|pre)([.-]?[0-9]+)?$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-desktop:
+    needs: prepare
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -47,8 +66,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.event.inputs.version || github.ref_name }}
-          releaseName: '${{ github.event.inputs.version || github.ref_name }}'
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: '${{ needs.prepare.outputs.tag }}'
           releaseBody: |
             Agent Toast 업데이트입니다.
 
@@ -59,15 +78,18 @@ jobs:
             - `agent-toast-send-windows-x86_64.exe` — 원격 서버용 CLI (Windows)
             - 기존 버전에서 자동 업데이트
           includeRelease: true
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           args: --config crates/agent-toast-desktop/tauri.release.conf.json
 
       - name: Upload portable exe
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           files: target/release/agent-toast.exe
 
   build-send:
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -135,7 +157,7 @@ jobs:
           path: dist/${{ matrix.artifact }}
 
   release:
-    needs: [build-desktop, build-send]
+    needs: [prepare, build-desktop, build-send]
     runs-on: ubuntu-latest
     steps:
       - name: Download send artifacts
@@ -154,7 +176,8 @@ jobs:
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           files: |
             dist/agent-toast-send-linux-x86_64
             dist/agent-toast-send-linux-aarch64
