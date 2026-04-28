@@ -119,6 +119,46 @@ fn get_monitor_list() -> Vec<win32::MonitorInfo> {
     win32::get_monitor_list()
 }
 
+/// Detect this machine's Tailscale MagicDNS short hostname (e.g. `mypc`).
+/// Returns `None` if Tailscale is not installed, not logged in, or the lookup fails.
+#[tauri::command]
+fn get_tailscale_hostname() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+
+        let candidates = [
+            "tailscale",
+            r"C:\Program Files\Tailscale\tailscale.exe",
+            r"C:\Program Files (x86)\Tailscale\tailscale.exe",
+        ];
+
+        let output = candidates.iter().find_map(|path| {
+            Command::new(path)
+                .args(["status", "--json", "--self"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+        })?;
+
+        let v: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        // `DNSName` is the MagicDNS FQDN (e.g. `mypc.tailXXXX.ts.net.`); its
+        // first label is the Tailscale node name, which differs from the OS
+        // hostname stored in `HostName`.
+        let dns = v.get("Self")?.get("DNSName")?.as_str()?;
+        let short = dns.split('.').next()?.trim();
+        if short.is_empty() {
+            None
+        } else {
+            Some(short.to_string())
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 #[tauri::command]
 fn get_notification_data(window: WebviewWindow) -> Option<NotificationData> {
     let state = window.app_handle().state::<NotificationManagerState>();
@@ -315,6 +355,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::open_settings_file,
             setup::is_hook_config_saved,
             get_monitor_list,
+            get_tailscale_hostname,
             updater::mark_update_pending
         ])
         .setup(move |app| {

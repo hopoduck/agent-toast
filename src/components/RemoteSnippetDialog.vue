@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { invoke } from "@tauri-apps/api/core";
 import {
   DialogClose,
   DialogContent,
@@ -20,19 +21,36 @@ const props = defineProps<{
 }>();
 const { t } = useI18n();
 
-function deriveDefaultUrl(port?: number): string {
+function deriveDefaultUrl(port: number | undefined, host: string): string {
   if (!port) return "";
-  return `http://0.0.0.0:${port}`;
+  return `http://${host}:${port}`;
 }
 
 const url = ref("");
 const hostname = ref("");
+let cachedTailscaleHost: string | null | undefined = undefined;
+
+async function resolveDefaultHost(): Promise<string> {
+  if (cachedTailscaleHost === undefined) {
+    try {
+      cachedTailscaleHost = await invoke<string | null>(
+        "get_tailscale_hostname",
+      );
+    } catch {
+      cachedTailscaleHost = null;
+    }
+  }
+  return cachedTailscaleHost ?? "0.0.0.0";
+}
 
 watch(
   () => open.value,
-  (isOpen) => {
-    if (isOpen) {
-      url.value = deriveDefaultUrl(props.port);
+  async (isOpen) => {
+    if (!isOpen) return;
+    url.value = deriveDefaultUrl(props.port, "0.0.0.0");
+    const host = await resolveDefaultHost();
+    if (open.value) {
+      url.value = deriveDefaultUrl(props.port, host);
     }
   },
   { immediate: true },
