@@ -64,7 +64,7 @@ You can configure Claude Code hooks running on a remote Linux server to send not
 
 ### 1. Desktop: Enable HTTP Receiver
 
-Open the Agent Toast settings window → **Remote Notifications** → toggle **Enable HTTP receiver** ON. The default binding is `0.0.0.0:8787` and can be changed in settings.
+Open the Agent Toast settings window → **Remote Notifications** → toggle **Enable HTTP receiver** ON. The default port is `38787` (changeable in settings); the bind address is always `0.0.0.0`.
 
 Windows Firewall may prompt for permission on first use. If you're using Tailscale or SSH port forwarding, allowing **private networks** only is sufficient.
 
@@ -87,7 +87,7 @@ chmod +x ~/.local/bin/agent-toast-send
 ### 3. Register Hooks
 
 ```bash
-agent-toast-send init --url http://<desktop-ip>:8787 [--hostname "prod"]
+agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
 ```
 
 - `<desktop-ip>` is the address reachable from the server to your desktop (Tailscale, LAN, SSH `-R`). Network reachability is the user's responsibility and is not managed by the app.

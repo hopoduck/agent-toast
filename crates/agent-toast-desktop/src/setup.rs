@@ -76,9 +76,9 @@ pub struct HookConfig {
     /// v1 신규: 원격 알림 HTTP 수신 활성화 (기본 false — 옵트인)
     #[serde(default = "default_http_enabled")]
     pub http_enabled: bool,
-    /// HTTP 서버 바인딩 주소 (기본 0.0.0.0:8787)
-    #[serde(default = "default_http_bind_addr")]
-    pub http_bind_addr: String,
+    /// HTTP 서버 바인딩 포트 (기본 38787). 주소는 항상 0.0.0.0 으로 고정.
+    #[serde(default = "default_http_port")]
+    pub http_port: u16,
     /// 원격 알림 UI 에 호스트명 표시 여부 (기본 true)
     #[serde(default = "default_show_hostname")]
     pub show_hostname: bool,
@@ -116,8 +116,8 @@ fn default_http_enabled() -> bool {
     false
 }
 
-fn default_http_bind_addr() -> String {
-    "0.0.0.0:8787".into()
+fn default_http_port() -> u16 {
+    38787
 }
 
 fn default_show_hostname() -> bool {
@@ -269,7 +269,7 @@ impl Default for HookConfig {
             auto_close_on_focus: true,
             auto_dismiss_seconds: 0,
             http_enabled: false,
-            http_bind_addr: "0.0.0.0:8787".into(),
+            http_port: default_http_port(),
             show_hostname: true,
             notification_position: "bottom_right".into(),
             notification_sound: true,
@@ -375,10 +375,10 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         http_enabled: root["agent_toast"]["http_enabled"]
             .as_bool()
             .unwrap_or_else(default_http_enabled),
-        http_bind_addr: root["agent_toast"]["http_bind_addr"]
-            .as_str()
-            .map(|s| s.to_string())
-            .unwrap_or_else(default_http_bind_addr),
+        http_port: root["agent_toast"]["http_port"]
+            .as_u64()
+            .and_then(|n| u16::try_from(n).ok())
+            .unwrap_or_else(default_http_port),
         show_hostname: root["agent_toast"]["show_hostname"]
             .as_bool()
             .unwrap_or_else(default_show_hostname),
@@ -646,10 +646,7 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert("auto_start".into(), Value::Bool(config.auto_start));
     cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
     cn.insert("http_enabled".into(), Value::Bool(config.http_enabled));
-    cn.insert(
-        "http_bind_addr".into(),
-        Value::String(config.http_bind_addr.clone()),
-    );
+    cn.insert("http_port".into(), Value::Number(config.http_port.into()));
     cn.insert("show_hostname".into(), Value::Bool(config.show_hostname));
     cn.insert(
         "version".into(),
@@ -872,6 +869,9 @@ pub fn save_hook_config(
     // Codex config.toml 업데이트
     save_codex_config(config.codex_enabled).map_err(|e| e.to_string())?;
 
+    // HTTP 서버 상태를 새 설정과 동기화 (즉시 시작/중지/재시작)
+    crate::sync_http_server(&app).map_err(|e| format!("HTTP 서버 시작 실패: {e}"))?;
+
     // 저장 후 이미 떠 있는 알림들의 위치를 즉시 반영
     crate::notification::reposition_all(&app, &state);
 
@@ -934,8 +934,8 @@ pub fn read_http_enabled() -> bool {
     read_hook_config().http_enabled
 }
 
-pub fn read_http_bind_addr() -> String {
-    read_hook_config().http_bind_addr
+pub fn read_http_port() -> u16 {
+    read_hook_config().http_port
 }
 
 pub fn read_show_hostname() -> bool {
@@ -2284,13 +2284,13 @@ mod tests {
     fn hook_config_default_has_http_fields() {
         let cfg = HookConfig::default();
         assert!(!cfg.http_enabled);
-        assert_eq!(cfg.http_bind_addr, "0.0.0.0:8787");
+        assert_eq!(cfg.http_port, 38787);
         assert!(cfg.show_hostname);
     }
 
     #[test]
     fn hook_config_deserializes_without_http_fields_uses_defaults() {
-        // 세 신규 키(http_enabled, http_bind_addr, show_hostname)만 빠진 JSON.
+        // 세 신규 키(http_enabled, http_port, show_hostname)만 빠진 JSON.
         // 나머지 필드는 #[serde(default)] 없는 기존 필드이므로 모두 포함해야 역직렬화 성공.
         let json = r#"{
             "stop_enabled": false,
@@ -2326,7 +2326,7 @@ mod tests {
         }"#;
         let cfg: HookConfig = serde_json::from_str(json).unwrap();
         assert!(!cfg.http_enabled);
-        assert_eq!(cfg.http_bind_addr, "0.0.0.0:8787");
+        assert_eq!(cfg.http_port, 38787);
         assert!(cfg.show_hostname);
     }
 
@@ -2336,13 +2336,13 @@ mod tests {
         let json = r#"{
             "agent_toast": {
                 "http_enabled": true,
-                "http_bind_addr": "0.0.0.0:9999",
+                "http_port": 9999,
                 "show_hostname": false
             }
         }"#;
         let cfg = parse_hook_config_from_json(json);
         assert!(cfg.http_enabled);
-        assert_eq!(cfg.http_bind_addr, "0.0.0.0:9999");
+        assert_eq!(cfg.http_port, 9999);
         assert!(!cfg.show_hostname);
     }
 
@@ -2351,17 +2351,19 @@ mod tests {
         let json = r#"{"agent_toast": {}}"#;
         let cfg = parse_hook_config_from_json(json);
         assert!(!cfg.http_enabled);
-        assert_eq!(cfg.http_bind_addr, "0.0.0.0:8787");
+        assert_eq!(cfg.http_port, 38787);
         assert!(cfg.show_hostname);
     }
 
     #[test]
     fn write_agent_toast_settings_roundtrip_preserves_http_fields() {
         // save 경로가 세 키를 실제로 파일에 쓰는지, 그리고 parse 가 다시 읽는지 왕복 검증.
-        let mut cfg = HookConfig::default();
-        cfg.http_enabled = true;
-        cfg.http_bind_addr = "0.0.0.0:7777".into();
-        cfg.show_hostname = false;
+        let cfg = HookConfig {
+            http_enabled: true,
+            http_port: 7777,
+            show_hostname: false,
+            ..HookConfig::default()
+        };
 
         let mut root = Value::Object(Default::default());
         write_agent_toast_settings(&mut root, &cfg);
@@ -2369,18 +2371,19 @@ mod tests {
         let serialized = serde_json::to_string(&root).unwrap();
         let parsed = parse_hook_config_from_json(&serialized);
 
-        assert!(parsed.http_enabled, "http_enabled 이 저장/로드를 거쳐 유지되어야 함");
-        assert_eq!(parsed.http_bind_addr, "0.0.0.0:7777");
+        assert!(
+            parsed.http_enabled,
+            "http_enabled 이 저장/로드를 거쳐 유지되어야 함"
+        );
+        assert_eq!(parsed.http_port, 7777);
         assert!(!parsed.show_hostname);
     }
 
     #[test]
     fn write_agent_toast_settings_preserves_unknown_keys() {
         // agent_toast 하위에 미래 버전이 추가할 수도 있는 미지의 키를 덮어쓰지 않는지 확인.
-        let mut root: Value = serde_json::from_str(
-            r#"{"agent_toast": {"future_key": "keep-me"}}"#,
-        )
-        .unwrap();
+        let mut root: Value =
+            serde_json::from_str(r#"{"agent_toast": {"future_key": "keep-me"}}"#).unwrap();
         let cfg = HookConfig::default();
         write_agent_toast_settings(&mut root, &cfg);
         assert_eq!(

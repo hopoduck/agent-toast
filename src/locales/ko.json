@@ -153,7 +153,7 @@
   "remote": {
     "title": "원격 알림",
     "enabled": "HTTP 수신 활성화",
-    "bindAddr": "바인딩 주소",
+    "port": "포트",
     "showHostname": "호스트명 표시",
     "snippetBtn": "서버 설정 명령 생성",
     "snippet": {

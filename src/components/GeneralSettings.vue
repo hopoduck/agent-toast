@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   NumberField,
   NumberFieldContent,
@@ -227,17 +226,25 @@ onMounted(async () => {
           <Switch v-model="config.http_enabled" />
         </div>
 
-        <!-- Bind address (visible only when enabled) -->
+        <!-- Port (visible only when enabled) -->
         <div
           v-if="config.http_enabled"
           class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
         >
-          <span class="text-sm font-medium text-foreground shrink-0">{{ t("remote.bindAddr") }}</span>
-          <Input
-            v-model="config.http_bind_addr"
-            placeholder="0.0.0.0:8787"
-            class="h-7 text-xs w-[160px]"
-          />
+          <span class="text-sm font-medium text-foreground shrink-0">{{ t("remote.port") }}</span>
+          <NumberField
+            v-model="config.http_port"
+            :min="1"
+            :max="65535"
+            :format-options="{ useGrouping: false, maximumFractionDigits: 0 }"
+            class="w-[120px]"
+          >
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput class="h-7 text-xs" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
         </div>
 
         <!-- Show hostname -->
@@ -269,7 +276,7 @@ onMounted(async () => {
 
     <RemoteSnippetDialog
       v-model:open="showSnippet"
-      :bind-addr="config.http_bind_addr"
+      :port="config.http_port"
     />
   </div>
 </template>

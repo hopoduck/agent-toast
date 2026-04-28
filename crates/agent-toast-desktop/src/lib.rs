@@ -12,6 +12,7 @@ use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
 use std::fs::OpenOptions;
+use std::sync::{Arc, Mutex};
 
 use cli::NotifyRequest;
 use notification::{
@@ -23,6 +24,53 @@ use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+/// Holds the running HTTP server handle so we can start/stop it at runtime
+/// in response to settings changes.
+pub struct HttpServerState(pub Arc<Mutex<Option<http_server::HttpHandle>>>);
+
+/// Synchronize the HTTP server with the current `http_enabled` / `http_bind_addr`
+/// settings. Called at boot and after `save_hook_config`. Returns an error if
+/// the user wants the server enabled but binding fails — caller surfaces this
+/// to the UI.
+pub fn sync_http_server(app: &AppHandle) -> Result<(), String> {
+    let http_state = app.state::<HttpServerState>();
+    let mut guard = http_state.0.lock().unwrap();
+
+    let want_enabled = setup::read_http_enabled();
+    let want_addr = format!("0.0.0.0:{}", setup::read_http_port());
+    let current_addr = guard.as_ref().map(|h| h.addr().to_string());
+
+    let need_stop = match &current_addr {
+        Some(addr) => !want_enabled || *addr != want_addr,
+        None => false,
+    };
+    let need_start = want_enabled && (current_addr.is_none() || need_stop);
+
+    if need_stop {
+        if let Some(h) = guard.take() {
+            h.stop();
+        }
+        // Give the recv_timeout loop a moment to release the socket before rebind.
+        if need_start {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+        }
+    }
+
+    if need_start {
+        let handle = app.clone();
+        let mgr_state = app.state::<NotificationManagerState>().inner().clone();
+        let new_handle = http_server::start_server(&want_addr, move |req| {
+            show_notification(&handle, &mgr_state, req);
+        })?;
+        *guard = Some(new_handle);
+        log::info!("[HTTP] started on {}", want_addr);
+    } else if need_stop {
+        log::info!("[HTTP] stopped");
+    }
+
+    Ok(())
+}
 
 /// Holds tray menu items so we can update their text at runtime.
 pub struct TrayMenuState {
@@ -243,12 +291,14 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
     log::info!("=== Agent Toast Started === (log: {})", log_path.display());
 
     let mgr_state = notification::create_manager();
+    let http_state = HttpServerState(Arc::new(Mutex::new(None)));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(mgr_state.clone())
+        .manage(http_state)
         .invoke_handler(tauri::generate_handler![
             close_notify,
             activate_source,
@@ -331,15 +381,8 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             });
 
             // Start HTTP receiver if enabled in settings
-            if setup::read_http_enabled() {
-                let http_handle = handle.clone();
-                let http_state = state.clone();
-                let bind_addr = setup::read_http_bind_addr();
-                http_server::start_server(&bind_addr, move |req| {
-                    show_notification(&http_handle, &http_state, req);
-                });
-            } else {
-                log::info!("[HTTP] disabled via settings");
+            if let Err(e) = sync_http_server(&handle) {
+                log::error!("[HTTP] initial start failed: {e}");
             }
 
             // FR-3: Event-based foreground change detection via SetWinEventHook

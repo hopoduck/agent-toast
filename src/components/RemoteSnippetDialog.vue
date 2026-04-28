@@ -16,14 +16,13 @@ import { Check, Copy, X } from "lucide-vue-next";
 
 const open = defineModel<boolean>("open", { required: true });
 const props = defineProps<{
-  bindAddr?: string;
+  port?: number;
 }>();
 const { t } = useI18n();
 
-function deriveDefaultUrl(bindAddr?: string): string {
-  const addr = (bindAddr ?? "").trim();
-  if (!addr) return "";
-  return /^https?:\/\//i.test(addr) ? addr : `http://${addr}`;
+function deriveDefaultUrl(port?: number): string {
+  if (!port) return "";
+  return `http://0.0.0.0:${port}`;
 }
 
 const url = ref("");
@@ -33,7 +32,7 @@ watch(
   () => open.value,
   (isOpen) => {
     if (isOpen) {
-      url.value = deriveDefaultUrl(props.bindAddr);
+      url.value = deriveDefaultUrl(props.port);
     }
   },
   { immediate: true },

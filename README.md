@@ -64,7 +64,7 @@ pnpm tauri build
 
 ### 1. 데스크톱: HTTP 수신 활성화
 
-Agent Toast 설정 창 → **원격 알림** → **HTTP 수신 활성화** 토글 ON. 기본 바인딩은 `0.0.0.0:8787` 이며 설정에서 변경 가능.
+Agent Toast 설정 창 → **원격 알림** → **HTTP 수신 활성화** 토글 ON. 기본 포트는 `38787` 이며 설정에서 변경 가능. 바인딩 주소는 항상 `0.0.0.0` 입니다.
 
 Windows 방화벽이 처음 허용 여부를 물을 수 있습니다. Tailscale 이나 SSH 포트 포워딩 사용 시 **개인 네트워크** 만 허용해도 충분합니다.
 
@@ -87,7 +87,7 @@ chmod +x ~/.local/bin/agent-toast-send
 ### 3. 훅 등록
 
 ```bash
-agent-toast-send init --url http://<desktop-ip>:8787 [--hostname "prod"]
+agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
 ```
 
 - `<desktop-ip>` 는 서버에서 데스크톱에 도달 가능한 주소 (Tailscale, LAN, SSH `-R`). 네트워크 도달성은 사용자 책임이며 앱이 관리하지 않습니다.

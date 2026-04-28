@@ -153,7 +153,7 @@
   "remote": {
     "title": "Remote Notifications",
     "enabled": "Enable HTTP receiver",
-    "bindAddr": "Bind address",
+    "port": "Port",
     "showHostname": "Show hostname",
     "snippetBtn": "Generate server setup command",
     "snippet": {

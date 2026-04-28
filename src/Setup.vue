@@ -78,7 +78,7 @@ const config = ref<HookConfig>({
   auto_start: true,
   codex_enabled: false,
   http_enabled: false,
-  http_bind_addr: "0.0.0.0:8787",
+  http_port: 38787,
   show_hostname: true,
 });
 
@@ -211,7 +211,7 @@ function onReset() {
     auto_start: true,
     codex_enabled: false,
     http_enabled: false,
-    http_bind_addr: "0.0.0.0:8787",
+    http_port: 38787,
     show_hostname: true,
   };
 }

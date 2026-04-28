@@ -52,7 +52,7 @@ export interface HookConfig {
   auto_start: boolean;
   codex_enabled: boolean;
   http_enabled: boolean;
-  http_bind_addr: string;
+  http_port: number;
   show_hostname: boolean;
 }
 
