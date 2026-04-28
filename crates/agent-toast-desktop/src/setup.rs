@@ -372,6 +372,16 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .as_str()
             .unwrap_or("")
             .to_string(),
+        http_enabled: root["agent_toast"]["http_enabled"]
+            .as_bool()
+            .unwrap_or_else(default_http_enabled),
+        http_bind_addr: root["agent_toast"]["http_bind_addr"]
+            .as_str()
+            .map(|s| s.to_string())
+            .unwrap_or_else(default_http_bind_addr),
+        show_hostname: root["agent_toast"]["show_hostname"]
+            .as_bool()
+            .unwrap_or_else(default_show_hostname),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
     };
@@ -604,6 +614,50 @@ pub fn is_hook_config_saved() -> bool {
     false
 }
 
+/// Write `agent_toast` settings block into `root`, preserving any pre-existing
+/// keys within `agent_toast` that are not managed by this struct.
+fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
+    let mut cn = root["agent_toast"].as_object().cloned().unwrap_or_default();
+    cn.insert(
+        "title_display_mode".into(),
+        Value::String(config.title_display_mode.clone()),
+    );
+    cn.insert(
+        "auto_close_on_focus".into(),
+        Value::Bool(config.auto_close_on_focus),
+    );
+    cn.insert(
+        "auto_dismiss_seconds".into(),
+        Value::Number(config.auto_dismiss_seconds.into()),
+    );
+    cn.insert(
+        "notification_position".into(),
+        Value::String(config.notification_position.clone()),
+    );
+    cn.insert(
+        "notification_sound".into(),
+        Value::Bool(config.notification_sound),
+    );
+    cn.insert(
+        "notification_monitor".into(),
+        Value::String(config.notification_monitor.clone()),
+    );
+    cn.insert("locale".into(), Value::String(config.locale.clone()));
+    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
+    cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
+    cn.insert("http_enabled".into(), Value::Bool(config.http_enabled));
+    cn.insert(
+        "http_bind_addr".into(),
+        Value::String(config.http_bind_addr.clone()),
+    );
+    cn.insert("show_hostname".into(), Value::Bool(config.show_hostname));
+    cn.insert(
+        "version".into(),
+        Value::String(env!("CARGO_PKG_VERSION").to_string()),
+    );
+    root["agent_toast"] = Value::Object(cn);
+}
+
 /// Save hook config to ~/.claude/settings.json, preserving other fields
 #[tauri::command]
 pub fn save_hook_config(
@@ -805,40 +859,7 @@ pub fn save_hook_config(
     // Merge entries into root, preserving non-agent-toast hooks.
     root = merge_agent_toast_hooks(root, &entries);
 
-    // Save agent_toast settings
-    let mut cn = root["agent_toast"].as_object().cloned().unwrap_or_default();
-    cn.insert(
-        "title_display_mode".into(),
-        Value::String(config.title_display_mode),
-    );
-    cn.insert(
-        "auto_close_on_focus".into(),
-        Value::Bool(config.auto_close_on_focus),
-    );
-    cn.insert(
-        "auto_dismiss_seconds".into(),
-        Value::Number(config.auto_dismiss_seconds.into()),
-    );
-    cn.insert(
-        "notification_position".into(),
-        Value::String(config.notification_position),
-    );
-    cn.insert(
-        "notification_sound".into(),
-        Value::Bool(config.notification_sound),
-    );
-    cn.insert(
-        "notification_monitor".into(),
-        Value::String(config.notification_monitor),
-    );
-    cn.insert("locale".into(), Value::String(config.locale));
-    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
-    cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
-    cn.insert(
-        "version".into(),
-        Value::String(env!("CARGO_PKG_VERSION").to_string()),
-    );
-    root["agent_toast"] = Value::Object(cn);
+    write_agent_toast_settings(&mut root, &config);
 
     // Ensure .claude directory exists
     if let Some(parent) = path.parent() {
@@ -2307,5 +2328,65 @@ mod tests {
         assert!(!cfg.http_enabled);
         assert_eq!(cfg.http_bind_addr, "0.0.0.0:8787");
         assert!(cfg.show_hostname);
+    }
+
+    #[test]
+    fn parse_reads_http_fields_from_agent_toast_block() {
+        // 실제 저장 포맷(agent_toast 하위 키)을 수동 파서가 읽어오는지 검증.
+        let json = r#"{
+            "agent_toast": {
+                "http_enabled": true,
+                "http_bind_addr": "0.0.0.0:9999",
+                "show_hostname": false
+            }
+        }"#;
+        let cfg = parse_hook_config_from_json(json);
+        assert!(cfg.http_enabled);
+        assert_eq!(cfg.http_bind_addr, "0.0.0.0:9999");
+        assert!(!cfg.show_hostname);
+    }
+
+    #[test]
+    fn parse_missing_http_block_falls_back_to_defaults() {
+        let json = r#"{"agent_toast": {}}"#;
+        let cfg = parse_hook_config_from_json(json);
+        assert!(!cfg.http_enabled);
+        assert_eq!(cfg.http_bind_addr, "0.0.0.0:8787");
+        assert!(cfg.show_hostname);
+    }
+
+    #[test]
+    fn write_agent_toast_settings_roundtrip_preserves_http_fields() {
+        // save 경로가 세 키를 실제로 파일에 쓰는지, 그리고 parse 가 다시 읽는지 왕복 검증.
+        let mut cfg = HookConfig::default();
+        cfg.http_enabled = true;
+        cfg.http_bind_addr = "0.0.0.0:7777".into();
+        cfg.show_hostname = false;
+
+        let mut root = Value::Object(Default::default());
+        write_agent_toast_settings(&mut root, &cfg);
+
+        let serialized = serde_json::to_string(&root).unwrap();
+        let parsed = parse_hook_config_from_json(&serialized);
+
+        assert!(parsed.http_enabled, "http_enabled 이 저장/로드를 거쳐 유지되어야 함");
+        assert_eq!(parsed.http_bind_addr, "0.0.0.0:7777");
+        assert!(!parsed.show_hostname);
+    }
+
+    #[test]
+    fn write_agent_toast_settings_preserves_unknown_keys() {
+        // agent_toast 하위에 미래 버전이 추가할 수도 있는 미지의 키를 덮어쓰지 않는지 확인.
+        let mut root: Value = serde_json::from_str(
+            r#"{"agent_toast": {"future_key": "keep-me"}}"#,
+        )
+        .unwrap();
+        let cfg = HookConfig::default();
+        write_agent_toast_settings(&mut root, &cfg);
+        assert_eq!(
+            root["agent_toast"]["future_key"].as_str(),
+            Some("keep-me"),
+            "미지의 키는 보존되어야 함",
+        );
     }
 }
