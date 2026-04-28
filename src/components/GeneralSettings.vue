@@ -267,6 +267,9 @@ onMounted(async () => {
       {{ t("general.test_notification") }}
     </Button>
 
-    <RemoteSnippetDialog v-model:open="showSnippet" />
+    <RemoteSnippetDialog
+      v-model:open="showSnippet"
+      :bind-addr="config.http_bind_addr"
+    />
   </div>
 </template>

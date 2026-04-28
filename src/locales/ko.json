@@ -158,12 +158,14 @@
     "snippetBtn": "서버 설정 명령 생성",
     "snippet": {
       "urlLabel": "데스크톱 URL (서버에서 접근)",
-      "urlHint": "Tailscale IP, LAN IP, 또는 SSH -R 사용 시 http://localhost:8787",
+      "urlHint": "서버에서 이 데스크톱에 접근할 수 있는 주소로 바꿔주세요. 0.0.0.0은 외부에서 접근할 수 없으므로 Tailscale 호스트명/IP, LAN IP 등으로 교체 필요. (SSH -R 터널링 시에는 http://localhost:포트)",
       "hostnameLabel": "호스트명 라벨(선택)",
+      "hostnameHint": "알림에 표시될 발신 서버 이름. 비워두면 서버의 실제 호스트명이 자동으로 사용됩니다. (예: \"회사 서버\", \"홈 서버\")",
       "installHeader": "설치 명령",
-      "hookHeader": "훅 실행 명령 (참고)",
+      "hookHeader": "테스트 명령",
       "copyBtn": "복사",
-      "guideTitle": "설치 가이드"
+      "copiedBtn": "복사됨",
+      "guideTitle": "바이너리 설치"
     }
   },
   "defaults": {
