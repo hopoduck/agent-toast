@@ -16,6 +16,8 @@
     "title": "Agent Toast Settings",
     "reset_title": "Reset to defaults",
     "reset_confirm": "Reset to recommended defaults?",
+    "reset_action": "Reset",
+    "cancel": "Cancel",
     "tab_general": "General",
     "tab_hooks": "Hooks",
     "tab_howto": "Guide",
@@ -147,6 +149,24 @@
     "update_manual": "Auto-update is not available. Please download the latest version from GitHub.",
     "update_completed": "Update Complete",
     "update_completed_message": "Updated to v{version}!"
+  },
+  "remote": {
+    "title": "Remote Notifications",
+    "enabled": "Enable HTTP receiver",
+    "port": "Port",
+    "showHostname": "Show hostname",
+    "snippetBtn": "Generate server setup command",
+    "snippet": {
+      "urlLabel": "Desktop URL (as seen from server)",
+      "urlHint": "Replace with an address the server can reach this desktop at. 0.0.0.0 is not externally reachable — use a Tailscale hostname/IP, LAN IP, etc. (For SSH -R tunneling, use http://localhost:port)",
+      "hostnameLabel": "Hostname label (optional)",
+      "hostnameHint": "Sender name shown in the notification. Leave empty to use the server's actual hostname. (e.g. \"work server\", \"home server\")",
+      "installHeader": "Install command",
+      "hookHeader": "Test command",
+      "copyBtn": "Copy",
+      "copiedBtn": "Copied",
+      "guideTitle": "Binary installation"
+    }
   },
   "defaults": {
     "stop_message": "Task completed",

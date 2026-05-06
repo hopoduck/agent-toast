@@ -1,3 +1,4 @@
+use agent_toast_core::hook_config::{is_agent_toast_cmd, merge_agent_toast_hooks, HookEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -72,6 +73,15 @@ pub struct HookConfig {
     /// 설정을 저장한 앱 버전 (마이그레이션 판단용)
     #[serde(default)]
     pub version: String,
+    /// v1 신규: 원격 알림 HTTP 수신 활성화 (기본 false — 옵트인)
+    #[serde(default = "default_http_enabled")]
+    pub http_enabled: bool,
+    /// HTTP 서버 바인딩 포트 (기본 38787). 주소는 항상 0.0.0.0 으로 고정.
+    #[serde(default = "default_http_port")]
+    pub http_port: u16,
+    /// 원격 알림 UI 에 호스트명 표시 여부 (기본 true)
+    #[serde(default = "default_show_hostname")]
+    pub show_hostname: bool,
 }
 
 fn default_title_display_mode() -> String {
@@ -99,6 +109,18 @@ fn default_notification_monitor() -> String {
 }
 
 fn default_auto_start() -> bool {
+    true
+}
+
+fn default_http_enabled() -> bool {
+    false
+}
+
+fn default_http_port() -> u16 {
+    38787
+}
+
+fn default_show_hostname() -> bool {
     true
 }
 
@@ -246,6 +268,9 @@ impl Default for HookConfig {
             title_display_mode: "project".into(),
             auto_close_on_focus: true,
             auto_dismiss_seconds: 0,
+            http_enabled: false,
+            http_port: default_http_port(),
+            show_hostname: true,
             notification_position: "bottom_right".into(),
             notification_sound: true,
             notification_monitor: "primary".into(),
@@ -347,6 +372,16 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .as_str()
             .unwrap_or("")
             .to_string(),
+        http_enabled: root["agent_toast"]["http_enabled"]
+            .as_bool()
+            .unwrap_or_else(default_http_enabled),
+        http_port: root["agent_toast"]["http_port"]
+            .as_u64()
+            .and_then(|n| u16::try_from(n).ok())
+            .unwrap_or_else(default_http_port),
+        show_hostname: root["agent_toast"]["show_hostname"]
+            .as_bool()
+            .unwrap_or_else(default_show_hostname),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
     };
@@ -579,6 +614,47 @@ pub fn is_hook_config_saved() -> bool {
     false
 }
 
+/// Write `agent_toast` settings block into `root`, preserving any pre-existing
+/// keys within `agent_toast` that are not managed by this struct.
+fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
+    let mut cn = root["agent_toast"].as_object().cloned().unwrap_or_default();
+    cn.insert(
+        "title_display_mode".into(),
+        Value::String(config.title_display_mode.clone()),
+    );
+    cn.insert(
+        "auto_close_on_focus".into(),
+        Value::Bool(config.auto_close_on_focus),
+    );
+    cn.insert(
+        "auto_dismiss_seconds".into(),
+        Value::Number(config.auto_dismiss_seconds.into()),
+    );
+    cn.insert(
+        "notification_position".into(),
+        Value::String(config.notification_position.clone()),
+    );
+    cn.insert(
+        "notification_sound".into(),
+        Value::Bool(config.notification_sound),
+    );
+    cn.insert(
+        "notification_monitor".into(),
+        Value::String(config.notification_monitor.clone()),
+    );
+    cn.insert("locale".into(), Value::String(config.locale.clone()));
+    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
+    cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
+    cn.insert("http_enabled".into(), Value::Bool(config.http_enabled));
+    cn.insert("http_port".into(), Value::Number(config.http_port.into()));
+    cn.insert("show_hostname".into(), Value::Bool(config.show_hostname));
+    cn.insert(
+        "version".into(),
+        Value::String(env!("CARGO_PKG_VERSION").to_string()),
+    );
+    root["agent_toast"] = Value::Object(cn);
+}
+
 /// Save hook config to ~/.claude/settings.json, preserving other fields
 #[tauri::command]
 pub fn save_hook_config(
@@ -596,289 +672,191 @@ pub fn save_hook_config(
     };
 
     let exe = exe_path_for_shell();
-    let mut hooks = serde_json::Map::new();
 
-    // Preserve non-agent-toast hooks from existing config.
-    // Detect hooks registered by a different exe path and remove them.
-    if let Some(existing_hooks) = root["hooks"].as_object() {
-        for (event_name, entries) in existing_hooks {
-            if let Some(arr) = entries.as_array() {
-                let filtered: Vec<&Value> = arr
-                    .iter()
-                    .filter(|entry| !is_agent_toast_entry(entry))
-                    .collect();
-                if !filtered.is_empty() {
-                    hooks.insert(
-                        event_name.clone(),
-                        Value::Array(filtered.into_iter().cloned().collect()),
-                    );
-                }
-            }
-        }
-    }
-
-    // Build agent-toast hooks
+    // Build agent-toast hook entries.
+    let mut entries: Vec<HookEntry> = Vec::new();
 
     // SessionStart: add --daemon entry if auto_start is enabled
     if config.auto_start {
-        let entry = build_hook_entry(None, &format!("{} --daemon", exe), None);
-        hooks
-            .entry("SessionStart".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "SessionStart",
+            matcher: None,
+            command: format!("{} --daemon", exe),
+        });
     }
     // SessionStart: add notification entry if enabled
     if config.session_start_enabled {
-        let cmd = format!(
-            "{} --event session_start --message \"{}\"",
-            exe, config.session_start_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("SessionStart".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "SessionStart",
+            matcher: None,
+            command: format!(
+                "{} --event session_start --message \"{}\"",
+                exe, config.session_start_message
+            ),
+        });
     }
 
     // CLI reads CLAUDE_PROJECT_DIR env var directly as title hint fallback,
     // so no --title arg needed in the hook command.
 
     if config.stop_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.stop_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("Stop".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "Stop",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.stop_message
+            ),
+        });
     }
 
     if config.notification_permission_enabled {
-        let cmd = format!(
-            "{} --event user_input_required --message \"{}\"",
-            exe, config.notification_permission_message
-        );
-        let entry = build_hook_entry(Some("permission_prompt"), &cmd, None);
-        hooks
-            .entry("Notification".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "Notification",
+            matcher: Some("permission_prompt"),
+            command: format!(
+                "{} --event user_input_required --message \"{}\"",
+                exe, config.notification_permission_message
+            ),
+        });
     }
 
     if config.notification_elicitation_enabled {
-        let cmd = format!(
-            "{} --event user_input_required --message \"{}\"",
-            exe, config.notification_elicitation_message
-        );
-        let entry = build_hook_entry(Some("elicitation_dialog"), &cmd, None);
-        hooks
-            .entry("Notification".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "Notification",
+            matcher: Some("elicitation_dialog"),
+            command: format!(
+                "{} --event user_input_required --message \"{}\"",
+                exe, config.notification_elicitation_message
+            ),
+        });
     }
 
     if config.notification_idle_enabled {
-        let cmd = format!(
-            "{} --event user_input_required --message \"{}\"",
-            exe, config.notification_idle_message
-        );
-        let entry = build_hook_entry(Some("idle_prompt"), &cmd, None);
-        hooks
-            .entry("Notification".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "Notification",
+            matcher: Some("idle_prompt"),
+            command: format!(
+                "{} --event user_input_required --message \"{}\"",
+                exe, config.notification_idle_message
+            ),
+        });
     }
 
     if config.session_end_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.session_end_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("SessionEnd".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "SessionEnd",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.session_end_message
+            ),
+        });
     }
 
     if config.subagent_stop_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.subagent_stop_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("SubagentStop".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "SubagentStop",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.subagent_stop_message
+            ),
+        });
     }
 
     if config.pre_compact_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.pre_compact_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("PreCompact".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "PreCompact",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.pre_compact_message
+            ),
+        });
     }
 
     if config.setup_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.setup_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("Setup".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "Setup",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.setup_message
+            ),
+        });
     }
 
     if config.user_prompt_submit_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.user_prompt_submit_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("UserPromptSubmit".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "UserPromptSubmit",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.user_prompt_submit_message
+            ),
+        });
     }
 
     if config.pre_tool_use_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.pre_tool_use_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("PreToolUse".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "PreToolUse",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.pre_tool_use_message
+            ),
+        });
     }
 
     if config.post_tool_use_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.post_tool_use_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("PostToolUse".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "PostToolUse",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.post_tool_use_message
+            ),
+        });
     }
 
     if config.post_tool_use_failure_enabled {
-        let cmd = format!(
-            "{} --event error --message \"{}\"",
-            exe, config.post_tool_use_failure_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("PostToolUseFailure".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "PostToolUseFailure",
+            matcher: None,
+            command: format!(
+                "{} --event error --message \"{}\"",
+                exe, config.post_tool_use_failure_message
+            ),
+        });
     }
 
     if config.permission_request_enabled {
-        let cmd = format!(
-            "{} --event user_input_required --message \"{}\"",
-            exe, config.permission_request_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("PermissionRequest".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "PermissionRequest",
+            matcher: None,
+            command: format!(
+                "{} --event user_input_required --message \"{}\"",
+                exe, config.permission_request_message
+            ),
+        });
     }
 
     if config.subagent_start_enabled {
-        let cmd = format!(
-            "{} --event task_complete --message \"{}\"",
-            exe, config.subagent_start_message
-        );
-        let entry = build_hook_entry(None, &cmd, None);
-        hooks
-            .entry("SubagentStart".to_string())
-            .or_insert_with(|| Value::Array(vec![]))
-            .as_array_mut()
-            .unwrap()
-            .push(entry);
+        entries.push(HookEntry {
+            event_key: "SubagentStart",
+            matcher: None,
+            command: format!(
+                "{} --event task_complete --message \"{}\"",
+                exe, config.subagent_start_message
+            ),
+        });
     }
 
-    root["hooks"] = Value::Object(hooks);
+    // Merge entries into root, preserving non-agent-toast hooks.
+    root = merge_agent_toast_hooks(root, &entries);
 
-    // Save agent_toast settings
-    let mut cn = root["agent_toast"].as_object().cloned().unwrap_or_default();
-    cn.insert(
-        "title_display_mode".into(),
-        Value::String(config.title_display_mode),
-    );
-    cn.insert(
-        "auto_close_on_focus".into(),
-        Value::Bool(config.auto_close_on_focus),
-    );
-    cn.insert(
-        "auto_dismiss_seconds".into(),
-        Value::Number(config.auto_dismiss_seconds.into()),
-    );
-    cn.insert(
-        "notification_position".into(),
-        Value::String(config.notification_position),
-    );
-    cn.insert(
-        "notification_sound".into(),
-        Value::Bool(config.notification_sound),
-    );
-    cn.insert(
-        "notification_monitor".into(),
-        Value::String(config.notification_monitor),
-    );
-    cn.insert("locale".into(), Value::String(config.locale));
-    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
-    cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
-    cn.insert(
-        "version".into(),
-        Value::String(env!("CARGO_PKG_VERSION").to_string()),
-    );
-    root["agent_toast"] = Value::Object(cn);
+    write_agent_toast_settings(&mut root, &config);
 
     // Ensure .claude directory exists
     if let Some(parent) = path.parent() {
@@ -890,6 +868,9 @@ pub fn save_hook_config(
 
     // Codex config.toml 업데이트
     save_codex_config(config.codex_enabled).map_err(|e| e.to_string())?;
+
+    // HTTP 서버 상태를 새 설정과 동기화 (즉시 시작/중지/재시작)
+    crate::sync_http_server(&app).map_err(|e| format!("HTTP 서버 시작 실패: {e}"))?;
 
     // 저장 후 이미 떠 있는 알림들의 위치를 즉시 반영
     crate::notification::reposition_all(&app, &state);
@@ -947,6 +928,27 @@ pub fn get_saved_exe_path() -> Option<String> {
 pub fn open_settings_file() -> Result<(), String> {
     let path = settings_path();
     open::that(&path).map_err(|e| e.to_string())
+}
+
+pub fn read_http_enabled() -> bool {
+    read_hook_config().http_enabled
+}
+
+pub fn read_http_port() -> u16 {
+    read_hook_config().http_port
+}
+
+pub fn read_show_hostname() -> bool {
+    read_hook_config().show_hostname
+}
+
+/// Read `HookConfig` from ~/.claude/settings.json — returns Default on any failure.
+fn read_hook_config() -> HookConfig {
+    let path = settings_path();
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return HookConfig::default();
+    };
+    parse_hook_config_from_json(&content)
 }
 
 /// 설정 파일에서 auto_close_on_focus 값만 빠르게 읽기
@@ -1064,14 +1066,13 @@ fn save_codex_config(enabled: bool) -> Result<(), String> {
 }
 
 /// Extract the command string from a hook entry if it belongs to agent-toast.
-/// Uses case-insensitive matching and safe `.get()` access to handle both
-/// "agent-toast" (cargo name) and "Agent Toast" (productName / NSIS install).
+/// Delegates detection to `is_agent_toast_cmd` (core) so hyphen/underscore/space
+/// variants and "Agent Toast" productName are all matched consistently.
 fn extract_agent_toast_cmd(entry: &Value) -> Option<&str> {
     let hooks_arr = entry.get("hooks")?.as_array()?;
     for hook in hooks_arr {
         let cmd = hook.get("command")?.as_str()?;
-        let lower = cmd.to_lowercase();
-        if lower.contains("agent-toast") || lower.contains("agent toast") {
+        if is_agent_toast_cmd(cmd) {
             return Some(cmd);
         }
     }
@@ -1083,6 +1084,7 @@ fn is_agent_toast_entry(entry: &Value) -> bool {
     extract_agent_toast_cmd(entry).is_some()
 }
 
+#[cfg(test)]
 fn build_hook_entry(matcher: Option<&str>, command: &str, timeout: Option<u32>) -> Value {
     let mut entry = serde_json::Map::new();
     if let Some(m) = matcher {
@@ -2276,5 +2278,118 @@ mod tests {
         }"#;
         let config = parse_hook_config_from_json(json);
         assert!(!config.session_start_enabled);
+    }
+
+    #[test]
+    fn hook_config_default_has_http_fields() {
+        let cfg = HookConfig::default();
+        assert!(!cfg.http_enabled);
+        assert_eq!(cfg.http_port, 38787);
+        assert!(cfg.show_hostname);
+    }
+
+    #[test]
+    fn hook_config_deserializes_without_http_fields_uses_defaults() {
+        // 세 신규 키(http_enabled, http_port, show_hostname)만 빠진 JSON.
+        // 나머지 필드는 #[serde(default)] 없는 기존 필드이므로 모두 포함해야 역직렬화 성공.
+        let json = r#"{
+            "stop_enabled": false,
+            "stop_message": "",
+            "permission_request_enabled": false,
+            "permission_request_message": "",
+            "notification_permission_enabled": false,
+            "notification_permission_message": "",
+            "notification_elicitation_enabled": false,
+            "notification_elicitation_message": "",
+            "setup_enabled": false,
+            "setup_message": "",
+            "session_start_enabled": false,
+            "session_start_message": "",
+            "session_end_enabled": false,
+            "session_end_message": "",
+            "subagent_start_enabled": false,
+            "subagent_start_message": "",
+            "subagent_stop_enabled": false,
+            "subagent_stop_message": "",
+            "user_prompt_submit_enabled": false,
+            "user_prompt_submit_message": "",
+            "pre_tool_use_enabled": false,
+            "pre_tool_use_message": "",
+            "post_tool_use_enabled": false,
+            "post_tool_use_message": "",
+            "post_tool_use_failure_enabled": false,
+            "post_tool_use_failure_message": "",
+            "pre_compact_enabled": false,
+            "pre_compact_message": "",
+            "notification_idle_enabled": false,
+            "notification_idle_message": ""
+        }"#;
+        let cfg: HookConfig = serde_json::from_str(json).unwrap();
+        assert!(!cfg.http_enabled);
+        assert_eq!(cfg.http_port, 38787);
+        assert!(cfg.show_hostname);
+    }
+
+    #[test]
+    fn parse_reads_http_fields_from_agent_toast_block() {
+        // 실제 저장 포맷(agent_toast 하위 키)을 수동 파서가 읽어오는지 검증.
+        let json = r#"{
+            "agent_toast": {
+                "http_enabled": true,
+                "http_port": 9999,
+                "show_hostname": false
+            }
+        }"#;
+        let cfg = parse_hook_config_from_json(json);
+        assert!(cfg.http_enabled);
+        assert_eq!(cfg.http_port, 9999);
+        assert!(!cfg.show_hostname);
+    }
+
+    #[test]
+    fn parse_missing_http_block_falls_back_to_defaults() {
+        let json = r#"{"agent_toast": {}}"#;
+        let cfg = parse_hook_config_from_json(json);
+        assert!(!cfg.http_enabled);
+        assert_eq!(cfg.http_port, 38787);
+        assert!(cfg.show_hostname);
+    }
+
+    #[test]
+    fn write_agent_toast_settings_roundtrip_preserves_http_fields() {
+        // save 경로가 세 키를 실제로 파일에 쓰는지, 그리고 parse 가 다시 읽는지 왕복 검증.
+        let cfg = HookConfig {
+            http_enabled: true,
+            http_port: 7777,
+            show_hostname: false,
+            ..HookConfig::default()
+        };
+
+        let mut root = Value::Object(Default::default());
+        write_agent_toast_settings(&mut root, &cfg);
+
+        let serialized = serde_json::to_string(&root).unwrap();
+        let parsed = parse_hook_config_from_json(&serialized);
+
+        assert!(
+            parsed.http_enabled,
+            "http_enabled 이 저장/로드를 거쳐 유지되어야 함"
+        );
+        assert_eq!(parsed.http_port, 7777);
+        assert!(!parsed.show_hostname);
+    }
+
+    #[test]
+    fn write_agent_toast_settings_preserves_unknown_keys() {
+        // agent_toast 하위에 미래 버전이 추가할 수도 있는 미지의 키를 덮어쓰지 않는지 확인.
+        let mut root: Value =
+            serde_json::from_str(r#"{"agent_toast": {"future_key": "keep-me"}}"#).unwrap();
+        let cfg = HookConfig::default();
+        write_agent_toast_settings(&mut root, &cfg);
+        assert_eq!(
+            root["agent_toast"]["future_key"].as_str(),
+            Some("keep-me"),
+            "미지의 키는 보존되어야 함",
+        );
     }
 }

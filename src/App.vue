@@ -38,6 +38,16 @@ function startDismissTimer() {
 
 const isCodex = computed(() => notification.value?.source === "codex");
 
+const isRemote = computed(() => !!notification.value?.hostname);
+const showHostname = computed(
+  () => isRemote.value && !!notification.value?.show_hostname,
+);
+const hostnameLabel = computed(() =>
+  showHostname.value ? notification.value!.hostname : null,
+);
+const truncate = (s: string | null | undefined, n = 500) =>
+  !s ? s : s.length > n ? s.slice(0, n) + "…" : s;
+
 const eventType = computed<EventType>(() => {
   if (!notification.value) return "default";
   if (isCodex.value) return "codex";
@@ -299,19 +309,26 @@ async function onClose() {
         <div
           class="text-[14px] font-medium text-white/90 truncate leading-snug"
         >
-          {{ notification.window_title }}
+          {{ truncate(notification.window_title) }}
+          <span
+            v-if="hostnameLabel"
+            class="ml-1.5 text-[11px] font-normal text-white/55"
+          >
+            @ {{ truncate(hostnameLabel) }}
+          </span>
         </div>
         <div
           v-if="notification.message"
           class="text-xs text-white/60 truncate leading-snug"
         >
-          {{ notification.message }}
+          {{ truncate(notification.message) }}
         </div>
       </div>
 
       <!-- Actions -->
       <div class="flex gap-1.5">
         <button
+          v-if="!isRemote || isUpdateAvailable"
           class="flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-medium rounded-md border transition-colors"
           :class="styles.viewBtn"
           @click="onView"

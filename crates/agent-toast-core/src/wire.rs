@@ -1,48 +1,15 @@
-use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-#[derive(Parser, Debug)]
-#[command(
-    name = "agent-toast",
-    about = "Smart notification for AI coding agents"
-)]
-pub struct Cli {
-    /// PID of the source terminal/editor (defaults to current process)
-    #[arg(long)]
-    pub pid: Option<u32>,
-
-    /// Event type
-    #[arg(long)]
-    pub event: Option<String>,
-
-    /// Message text
-    #[arg(long)]
-    pub message: Option<String>,
-
-    /// Window title hint for matching the correct source window
-    #[arg(long)]
-    pub title: Option<String>,
-
-    /// Start as background daemon (no notification)
-    #[arg(long)]
-    pub daemon: bool,
-
-    /// Internal: actually run the daemon process (spawned by --daemon)
-    #[arg(long, hide = true)]
-    pub daemon_run: bool,
-
-    /// Open hook setup GUI
-    #[arg(long)]
-    pub setup: bool,
-
-    /// Codex mode: receive JSON from Codex CLI notify hook
-    #[arg(long)]
-    pub codex: bool,
-
-    /// Positional argument for Codex JSON payload
-    #[arg(index = 1)]
-    pub codex_json: Option<String>,
-}
+/// Diagnostic version string reflecting the `agent-toast-core` crate version.
+///
+/// Surfaced by `agent-toast-send --version` so users can check whether the
+/// sender and desktop share compatible build versions when debugging
+/// cross-host notification issues.
+///
+/// This is NOT a stable wire-schema version identifier. The wire format
+/// evolves via `#[serde(default)]` on new fields for forward/backward
+/// compatibility, without bumping this constant's meaning.
+pub const WIRE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotifyRequest {
@@ -56,6 +23,16 @@ pub struct NotifyRequest {
     /// Source of the notification: "claude" or "codex"
     #[serde(default = "default_source")]
     pub source: String,
+
+    /// Sender host identifier for remote notifications.
+    ///
+    /// - `None`: delivered via local named pipe (Windows-only path).
+    /// - `Some(label)`: delivered via HTTP from a remote host. `label` is
+    ///   either the result of `hostname::get()` or a user-provided override.
+    /// - Used by the desktop UI to distinguish remote from local notifications
+    ///   and render a host badge.
+    #[serde(default)]
+    pub hostname: Option<String>,
 }
 
 fn default_source() -> String {
@@ -81,6 +58,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         }
     }
 
@@ -107,6 +85,7 @@ mod tests {
             title_hint: Some("my-project".to_string()),
             process_tree: Some(vec![100, 200, 300]),
             source: "claude".into(),
+            hostname: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -167,6 +146,7 @@ mod tests {
             title_hint: None,
             process_tree: Some(tree.clone()),
             source: "claude".into(),
+            hostname: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -182,6 +162,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -200,6 +181,7 @@ mod tests {
             title_hint: Some("프로젝트-이름".to_string()),
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -215,6 +197,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -230,6 +213,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "updater".into(),
+            hostname: None,
         };
         assert_eq!(req.pid, 0);
     }
@@ -243,6 +227,7 @@ mod tests {
             title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            hostname: None,
         };
         assert_eq!(req.event, "");
         assert_eq!(req.event_display(), "");
@@ -275,6 +260,7 @@ mod tests {
             title_hint: Some("hint".to_string()),
             process_tree: Some(vec![1, 2, 3]),
             source: "claude".into(),
+            hostname: None,
         };
         let cloned = req.clone();
         assert_eq!(cloned.pid, req.pid);
@@ -285,158 +271,59 @@ mod tests {
         assert_eq!(cloned.source, req.source);
     }
 
-    // ── Cli parsing tests ──
-
     #[test]
-    fn cli_parse_daemon_flag() {
-        let cli = Cli::try_parse_from(["agent-toast", "--daemon"]).unwrap();
-        assert!(cli.daemon);
-        assert!(!cli.setup);
-        assert!(!cli.codex);
-        assert!(cli.pid.is_none());
-        assert!(cli.event.is_none());
+    fn hostname_field_default_is_none() {
+        let json = r#"{"pid":0,"event":"task_complete","source":"claude"}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert!(req.hostname.is_none());
     }
 
     #[test]
-    fn cli_parse_daemon_run_flag() {
-        let cli = Cli::try_parse_from(["agent-toast", "--daemon-run"]).unwrap();
-        assert!(cli.daemon_run);
-        assert!(!cli.daemon);
-        assert!(!cli.setup);
-        assert!(!cli.codex);
+    fn hostname_field_roundtrip() {
+        let req = NotifyRequest {
+            pid: 0,
+            event: "task_complete".into(),
+            message: Some("done".into()),
+            title_hint: Some("proj".into()),
+            process_tree: None,
+            source: "claude".into(),
+            hostname: Some("prod-vps-01".into()),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""hostname":"prod-vps-01""#));
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.hostname.as_deref(), Some("prod-vps-01"));
     }
 
     #[test]
-    fn cli_parse_daemon_and_daemon_run_independent() {
-        // --daemon과 --daemon-run은 별개 플래그
-        let cli = Cli::try_parse_from(["agent-toast", "--daemon"]).unwrap();
-        assert!(cli.daemon);
-        assert!(!cli.daemon_run);
-
-        let cli = Cli::try_parse_from(["agent-toast", "--daemon-run"]).unwrap();
-        assert!(!cli.daemon);
-        assert!(cli.daemon_run);
+    fn hostname_field_unicode() {
+        let req = NotifyRequest {
+            pid: 0,
+            event: "task_complete".into(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+            hostname: Some("회사-서버-01".into()),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.hostname.as_deref(), Some("회사-서버-01"));
     }
 
     #[test]
-    fn cli_daemon_run_not_in_help() {
-        // --daemon-run은 숨김 플래그이므로 help에 표시되지 않아야 함
-        let mut cmd = <Cli as clap::CommandFactory>::command();
-        let mut buf = Vec::new();
-        cmd.write_help(&mut buf).unwrap();
-        let help = String::from_utf8(buf).unwrap();
-        assert!(help.contains("--daemon"));
-        assert!(!help.contains("--daemon-run"));
-    }
-
-    #[test]
-    fn cli_parse_no_args_daemon_run_false() {
-        let cli = Cli::try_parse_from(["agent-toast"]).unwrap();
-        assert!(!cli.daemon_run);
-    }
-
-    #[test]
-    fn cli_parse_setup_flag() {
-        let cli = Cli::try_parse_from(["agent-toast", "--setup"]).unwrap();
-        assert!(cli.setup);
-        assert!(!cli.daemon);
-    }
-
-    #[test]
-    fn cli_parse_codex_flag() {
-        let cli = Cli::try_parse_from(["agent-toast", "--codex"]).unwrap();
-        assert!(cli.codex);
-    }
-
-    #[test]
-    fn cli_parse_codex_with_json_payload() {
-        let cli = Cli::try_parse_from(["agent-toast", "--codex", r#"{"type":"test"}"#]).unwrap();
-        assert!(cli.codex);
-        assert_eq!(cli.codex_json.as_deref(), Some(r#"{"type":"test"}"#));
-    }
-
-    #[test]
-    fn cli_parse_pid_and_event() {
-        let cli = Cli::try_parse_from(["agent-toast", "--pid", "1234", "--event", "task_complete"])
-            .unwrap();
-        assert_eq!(cli.pid, Some(1234));
-        assert_eq!(cli.event.as_deref(), Some("task_complete"));
-    }
-
-    #[test]
-    fn cli_parse_full_notification() {
-        let cli = Cli::try_parse_from([
-            "agent-toast",
-            "--pid",
-            "5678",
-            "--event",
-            "user_input_required",
-            "--message",
-            "입력이 필요합니다",
-            "--title",
-            "my-project",
-        ])
-        .unwrap();
-        assert_eq!(cli.pid, Some(5678));
-        assert_eq!(cli.event.as_deref(), Some("user_input_required"));
-        assert_eq!(cli.message.as_deref(), Some("입력이 필요합니다"));
-        assert_eq!(cli.title.as_deref(), Some("my-project"));
-    }
-
-    #[test]
-    fn cli_parse_no_args() {
-        let cli = Cli::try_parse_from(["agent-toast"]).unwrap();
-        assert!(!cli.daemon);
-        assert!(!cli.setup);
-        assert!(!cli.codex);
-        assert!(cli.pid.is_none());
-        assert!(cli.event.is_none());
-        assert!(cli.message.is_none());
-        assert!(cli.title.is_none());
-        assert!(cli.codex_json.is_none());
-    }
-
-    #[test]
-    fn cli_parse_invalid_pid_fails() {
-        let result = Cli::try_parse_from(["agent-toast", "--pid", "not-a-number"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn cli_parse_message_with_spaces() {
-        let cli = Cli::try_parse_from([
-            "agent-toast",
-            "--event",
-            "task_complete",
-            "--message",
-            "Build completed successfully",
-        ])
-        .unwrap();
-        assert_eq!(cli.message.as_deref(), Some("Build completed successfully"));
-    }
-
-    #[test]
-    fn cli_parse_message_with_unicode() {
-        let cli = Cli::try_parse_from(["agent-toast", "--message", "빌드 완료 🎉"]).unwrap();
-        assert_eq!(cli.message.as_deref(), Some("빌드 완료 🎉"));
-    }
-
-    #[test]
-    fn cli_parse_multiple_flags() {
-        let cli = Cli::try_parse_from(["agent-toast", "--daemon", "--setup"]).unwrap();
-        assert!(cli.daemon);
-        assert!(cli.setup);
-    }
-
-    #[test]
-    fn cli_parse_max_pid() {
-        let cli = Cli::try_parse_from(["agent-toast", "--pid", &u32::MAX.to_string()]).unwrap();
-        assert_eq!(cli.pid, Some(u32::MAX));
-    }
-
-    #[test]
-    fn cli_parse_zero_pid() {
-        let cli = Cli::try_parse_from(["agent-toast", "--pid", "0"]).unwrap();
-        assert_eq!(cli.pid, Some(0));
+    fn hostname_field_empty_string_is_some_empty() {
+        let req = NotifyRequest {
+            pid: 0,
+            event: "task_complete".into(),
+            message: None,
+            title_hint: None,
+            process_tree: None,
+            source: "claude".into(),
+            hostname: Some(String::new()),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.hostname.as_deref(), Some(""));
     }
 }

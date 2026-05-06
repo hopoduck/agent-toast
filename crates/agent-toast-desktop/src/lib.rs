@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod http_server;
 mod notification;
 pub mod pipe;
 pub mod setup;
@@ -11,6 +12,7 @@ use simplelog::{
     ColorChoice, CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, WriteLogger,
 };
 use std::fs::OpenOptions;
+use std::sync::{Arc, Mutex};
 
 use cli::NotifyRequest;
 use notification::{
@@ -22,6 +24,53 @@ use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+/// Holds the running HTTP server handle so we can start/stop it at runtime
+/// in response to settings changes.
+pub struct HttpServerState(pub Arc<Mutex<Option<http_server::HttpHandle>>>);
+
+/// Synchronize the HTTP server with the current `http_enabled` / `http_bind_addr`
+/// settings. Called at boot and after `save_hook_config`. Returns an error if
+/// the user wants the server enabled but binding fails — caller surfaces this
+/// to the UI.
+pub fn sync_http_server(app: &AppHandle) -> Result<(), String> {
+    let http_state = app.state::<HttpServerState>();
+    let mut guard = http_state.0.lock().unwrap();
+
+    let want_enabled = setup::read_http_enabled();
+    let want_addr = format!("0.0.0.0:{}", setup::read_http_port());
+    let current_addr = guard.as_ref().map(|h| h.addr().to_string());
+
+    let need_stop = match &current_addr {
+        Some(addr) => !want_enabled || *addr != want_addr,
+        None => false,
+    };
+    let need_start = want_enabled && (current_addr.is_none() || need_stop);
+
+    if need_stop {
+        if let Some(h) = guard.take() {
+            h.stop();
+        }
+        // Give the recv_timeout loop a moment to release the socket before rebind.
+        if need_start {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+        }
+    }
+
+    if need_start {
+        let handle = app.clone();
+        let mgr_state = app.state::<NotificationManagerState>().inner().clone();
+        let new_handle = http_server::start_server(&want_addr, move |req| {
+            show_notification(&handle, &mgr_state, req);
+        })?;
+        *guard = Some(new_handle);
+        log::info!("[HTTP] started on {}", want_addr);
+    } else if need_stop {
+        log::info!("[HTTP] stopped");
+    }
+
+    Ok(())
+}
 
 /// Holds tray menu items so we can update their text at runtime.
 pub struct TrayMenuState {
@@ -70,6 +119,46 @@ fn get_monitor_list() -> Vec<win32::MonitorInfo> {
     win32::get_monitor_list()
 }
 
+/// Detect this machine's Tailscale MagicDNS short hostname (e.g. `mypc`).
+/// Returns `None` if Tailscale is not installed, not logged in, or the lookup fails.
+#[tauri::command]
+fn get_tailscale_hostname() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+
+        let candidates = [
+            "tailscale",
+            r"C:\Program Files\Tailscale\tailscale.exe",
+            r"C:\Program Files (x86)\Tailscale\tailscale.exe",
+        ];
+
+        let output = candidates.iter().find_map(|path| {
+            Command::new(path)
+                .args(["status", "--json", "--self"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+        })?;
+
+        let v: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        // `DNSName` is the MagicDNS FQDN (e.g. `mypc.tailXXXX.ts.net.`); its
+        // first label is the Tailscale node name, which differs from the OS
+        // hostname stored in `HostName`.
+        let dns = v.get("Self")?.get("DNSName")?.as_str()?;
+        let short = dns.split('.').next()?.trim();
+        if short.is_empty() {
+            None
+        } else {
+            Some(short.to_string())
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 #[tauri::command]
 fn get_notification_data(window: WebviewWindow) -> Option<NotificationData> {
     let state = window.app_handle().state::<NotificationManagerState>();
@@ -85,7 +174,11 @@ fn close_notify(id: String, app: AppHandle) {
 #[tauri::command]
 fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
-    win32::activate_window(hwnd);
+    if hwnd != 0 {
+        win32::activate_window(hwnd);
+    } else {
+        log::debug!("[ACTIVATE] hwnd=0, skipping window activation (likely remote)");
+    }
     let state = app.state::<NotificationManagerState>();
     close_notification(&app, &state, &id);
 }
@@ -115,6 +208,7 @@ fn test_notification(app: AppHandle) {
         title_hint: Some(test_title.to_string()),
         process_tree: Some(vec![]),
         source: "claude".into(),
+        hostname: None,
     };
     log::debug!("[TEST] Spawning notification thread for event={}", event);
     std::thread::spawn(move || {
@@ -237,12 +331,14 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
     log::info!("=== Agent Toast Started === (log: {})", log_path.display());
 
     let mgr_state = notification::create_manager();
+    let http_state = HttpServerState(Arc::new(Mutex::new(None)));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(mgr_state.clone())
+        .manage(http_state)
         .invoke_handler(tauri::generate_handler![
             close_notify,
             activate_source,
@@ -259,6 +355,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::open_settings_file,
             setup::is_hook_config_saved,
             get_monitor_list,
+            get_tailscale_hostname,
             updater::mark_update_pending
         ])
         .setup(move |app| {
@@ -323,6 +420,11 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             pipe::start_server(move |req| {
                 show_notification(&pipe_handle, &pipe_state, req);
             });
+
+            // Start HTTP receiver if enabled in settings
+            if let Err(e) = sync_http_server(&handle) {
+                log::error!("[HTTP] initial start failed: {e}");
+            }
 
             // FR-3: Event-based foreground change detection via SetWinEventHook
             let focus_handle = handle.clone();

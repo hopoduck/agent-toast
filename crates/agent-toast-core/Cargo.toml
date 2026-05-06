@@ -1,0 +1,11 @@
+[package]
+name = "agent-toast-core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Shared wire format and helpers for Agent Toast"
+
+[dependencies]
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true

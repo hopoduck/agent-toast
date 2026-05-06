@@ -121,6 +121,7 @@ fn main() {
             title_hint,
             process_tree: Some(process_tree),
             source: "codex".into(),
+            hostname: None,
         };
 
         match pipe::try_send(&request) {
@@ -257,6 +258,7 @@ fn main() {
         title_hint,
         process_tree: Some(process_tree),
         source: "claude".into(),
+        hostname: None,
     };
 
     // Try to send to existing instance

@@ -1,9 +1,55 @@
 use crate::cli::NotifyRequest;
 use crate::win32;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::window::Color;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+/// Token-bucket rate limiter. `refill_per_sec` tokens per second, up to
+/// `capacity` tokens stored. Returns `false` when the bucket is empty.
+pub struct RateLimiter {
+    inner: Mutex<BucketInner>,
+    capacity: f64,
+    refill_per_sec: f64,
+}
+
+struct BucketInner {
+    tokens: f64,
+    last: Instant,
+}
+
+impl RateLimiter {
+    pub fn new(refill_per_sec: u32, capacity: u32) -> Self {
+        Self {
+            inner: Mutex::new(BucketInner {
+                tokens: capacity as f64,
+                last: Instant::now(),
+            }),
+            capacity: capacity as f64,
+            refill_per_sec: refill_per_sec as f64,
+        }
+    }
+
+    pub fn try_consume(&self) -> bool {
+        let mut g = self.inner.lock().unwrap();
+        let now = Instant::now();
+        let elapsed = now.duration_since(g.last).as_secs_f64();
+        g.tokens = (g.tokens + elapsed * self.refill_per_sec).min(self.capacity);
+        g.last = now;
+        if g.tokens >= 1.0 {
+            g.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Shared across local (pipe) and remote (HTTP) notification paths.
+/// Spec §3.3: 10/s refill, burst 10.
+static GLOBAL_RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(|| RateLimiter::new(10, 10));
 
 /// Notification window width in logical pixels.
 /// Sized to fit title + message comfortably (min 200, max 600 for readability).
@@ -24,6 +70,16 @@ pub struct NotificationData {
     pub process_tree: Vec<u32>,
     pub auto_dismiss_seconds: u32,
     pub source: String,
+    /// Remote sender host label. `None` for local (pipe) notifications.
+    #[serde(default)]
+    pub hostname: Option<String>,
+    /// Settings toggle — even if hostname is Some, UI may hide it.
+    #[serde(default = "default_show_hostname")]
+    pub show_hostname: bool,
+}
+
+fn default_show_hostname() -> bool {
+    true
 }
 
 pub struct NotificationManager {
@@ -69,6 +125,15 @@ pub fn show_notification(
     state: &NotificationManagerState,
     request: NotifyRequest,
 ) {
+    if !GLOBAL_RATE_LIMITER.try_consume() {
+        log::warn!(
+            "[RATE] dropped notification: event={} hostname={:?}",
+            request.event,
+            request.hostname
+        );
+        return;
+    }
+
     log::debug!(
         "[NOTIFY] show_notification called: event={}, pid={}, source={}",
         request.event,
@@ -165,6 +230,8 @@ pub fn show_notification(
         process_tree,
         auto_dismiss_seconds,
         source: request.source.clone(),
+        hostname: request.hostname.clone(),
+        show_hostname: crate::setup::read_show_hostname(),
     };
 
     // Calculate position: stack from bottom-right
@@ -412,6 +479,8 @@ mod tests {
             process_tree: vec![100, 200, 300],
             auto_dismiss_seconds: 30,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -436,6 +505,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "codex".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -454,6 +525,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "updater".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         assert!(data.process_tree.is_empty());
     }
@@ -469,6 +542,8 @@ mod tests {
             process_tree: vec![1, 2, 3],
             auto_dismiss_seconds: 10,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -522,6 +597,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             });
         }
         let result = get_notification_for_window(&state, "notify-1");
@@ -545,6 +622,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             });
             mgr.notifications.push(NotificationData {
                 id: "notify-2".to_string(),
@@ -555,6 +634,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             });
         }
 
@@ -628,6 +709,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: source.to_string(),
+                hostname: None,
+                show_hostname: false,
             };
             assert_eq!(data.source, source);
         }
@@ -645,6 +728,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: seconds,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             };
             assert_eq!(data.auto_dismiss_seconds, seconds);
         }
@@ -661,6 +746,8 @@ mod tests {
             process_tree: vec![100, 200, 300],
             auto_dismiss_seconds: 30,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let cloned = data.clone();
         assert_eq!(cloned.id, data.id);
@@ -683,6 +770,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
 
         {
@@ -714,6 +803,8 @@ mod tests {
                     process_tree: vec![],
                     auto_dismiss_seconds: 0,
                     source: "claude".to_string(),
+                    hostname: None,
+                    show_hostname: false,
                 });
             }
             assert_eq!(mgr.notifications.len(), 5);
@@ -768,6 +859,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             });
         }
 
@@ -806,6 +899,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let debug = format!("{:?}", data);
         assert!(debug.contains("test"));
@@ -854,6 +949,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -872,6 +969,8 @@ mod tests {
             process_tree: large_tree.clone(),
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -891,6 +990,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -908,6 +1009,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -925,6 +1028,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: u32::MAX,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -942,6 +1047,8 @@ mod tests {
             process_tree: vec![],
             auto_dismiss_seconds: 0,
             source: "".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -988,6 +1095,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             });
         }
         // 빈 ID로도 조회 가능
@@ -1009,6 +1118,8 @@ mod tests {
                 process_tree: vec![],
                 auto_dismiss_seconds: 0,
                 source: "claude".to_string(),
+                hostname: None,
+                show_hostname: false,
             });
             // 존재하지 않는 ID로 retain → 변화 없음
             mgr.notifications.retain(|n| n.id != "nonexistent");
@@ -1031,6 +1142,8 @@ mod tests {
                     process_tree: vec![],
                     auto_dismiss_seconds: 0,
                     source: "claude".to_string(),
+                    hostname: None,
+                    show_hostname: false,
                 });
             }
             // source_hwnd 기준 필터 (모든 항목이 100)
@@ -1055,9 +1168,47 @@ mod tests {
             process_tree: vec![100, 100, 100],
             auto_dismiss_seconds: 0,
             source: "claude".to_string(),
+            hostname: None,
+            show_hostname: false,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.process_tree, vec![100, 100, 100]);
+    }
+}
+
+#[cfg(test)]
+mod rate_limit_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn token_bucket_allows_burst_of_ten() {
+        let bucket = RateLimiter::new(10, 10);
+        for _ in 0..10 {
+            assert!(bucket.try_consume());
+        }
+        assert!(!bucket.try_consume(), "11번째는 드롭되어야 함");
+    }
+
+    #[test]
+    fn token_bucket_refills_over_time() {
+        let bucket = RateLimiter::new(10, 10);
+        for _ in 0..10 {
+            bucket.try_consume();
+        }
+        std::thread::sleep(Duration::from_millis(120));
+        assert!(bucket.try_consume(), "100ms 지나면 1 토큰 리필되어야 함");
+    }
+
+    #[test]
+    fn token_bucket_does_not_exceed_capacity() {
+        let bucket = RateLimiter::new(10, 10);
+        std::thread::sleep(Duration::from_millis(1500));
+        // 1.5초 동안 15 토큰 리필 시도했지만 capacity=10 초과 불가
+        for _ in 0..10 {
+            assert!(bucket.try_consume());
+        }
+        assert!(!bucket.try_consume());
     }
 }
