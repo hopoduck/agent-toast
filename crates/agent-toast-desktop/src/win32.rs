@@ -117,9 +117,75 @@ pub fn get_process_tree(start_pid: u32) -> Vec<u32> {
     tree
 }
 
+/// Score how well a window title matches the hint.
+///
+/// Returns 0 if no match; higher = better.
+/// VS Code titles like "file.ts - folder - Visual Studio Code" must NOT match a hint
+/// of "studio" via the "Visual Studio Code" suffix — only the folder segment counts.
+///
+/// Strategy: split by " - ", drop the last segment (typically app name), and prefer
+/// matches in the remaining "content" segments. Exact segment match > word-boundary
+/// match > substring. Substring in the dropped suffix only counts as a last-resort
+/// score of 1, so any real folder match outranks it.
+pub fn score_title_match(title: &str, hint: &str) -> u32 {
+    let hint_lower = hint.to_lowercase();
+    if hint_lower.is_empty() {
+        return 0;
+    }
+    let title_lower = title.to_lowercase();
+    let segments: Vec<&str> = title_lower.split(" - ").collect();
+    let content_segments: &[&str] = if segments.len() > 1 {
+        &segments[..segments.len() - 1]
+    } else {
+        &segments[..]
+    };
+
+    if content_segments.iter().any(|s| s.trim() == hint_lower) {
+        return 100;
+    }
+    if content_segments
+        .iter()
+        .any(|s| contains_word(s, &hint_lower))
+    {
+        return 50;
+    }
+    if content_segments.iter().any(|s| s.contains(&hint_lower)) {
+        return 10;
+    }
+    if title_lower.contains(&hint_lower) {
+        return 1;
+    }
+    0
+}
+
+/// True if `needle` appears in `haystack` flanked by non-alphanumeric (or string edge)
+/// characters on both sides. Treats `_` and `-` differently: `-` is a boundary,
+/// `_` is not (so `my_studio` does not match `studio`, but `my-studio` does).
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return false;
+    }
+    let hb = haystack.as_bytes();
+    let nb = needle.as_bytes();
+    let is_word_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || (b & 0x80) != 0;
+    for i in 0..=hb.len() - nb.len() {
+        if &hb[i..i + nb.len()] != nb {
+            continue;
+        }
+        let before_ok = i == 0 || !is_word_byte(hb[i - 1]);
+        let after_idx = i + nb.len();
+        let after_ok = after_idx >= hb.len() || !is_word_byte(hb[after_idx]);
+        if before_ok && after_ok {
+            return true;
+        }
+    }
+    false
+}
+
 /// Find the best visible window owned by any PID in the process tree.
-/// If title_hint is provided, prefer windows whose title contains it.
-/// Otherwise prefer PIDs closer to the start PID (child-first).
+/// If title_hint is provided, prefer windows whose title best matches it
+/// (see `score_title_match`). Otherwise, or on tie, prefer PIDs closer to
+/// the start PID (child-first), then z-order.
 /// Returns (all_candidates, best_match).
 #[cfg(windows)]
 pub fn find_source_window(
@@ -138,28 +204,35 @@ pub fn find_source_window(
     }
 
     let candidates = candidates.lock().unwrap();
-    // If title_hint provided, prefer matching title first
-    let best = if let Some(hint) = title_hint {
-        let hint_lower = hint.to_lowercase();
-        candidates
-            .iter()
-            .find(|(h, _)| get_window_title(*h).to_lowercase().contains(&hint_lower))
-            .copied()
-    } else {
-        None
-    }
-    // Fallback: pick by closest PID in tree (child-first)
-    .or_else(|| {
-        candidates
-            .iter()
-            .min_by_key(|(_, pid)| {
-                process_tree
-                    .iter()
-                    .position(|p| p == pid)
-                    .unwrap_or(usize::MAX)
-            })
-            .copied()
-    });
+
+    // Pick highest-scoring title match; on ties keep the first (top of z-order).
+    let best = title_hint
+        .filter(|h| !h.is_empty())
+        .and_then(|hint| {
+            let mut best: Option<(u32, WindowCandidate)> = None;
+            for c in candidates.iter() {
+                let score = score_title_match(&get_window_title(c.0), hint);
+                if score == 0 {
+                    continue;
+                }
+                if best.map(|(s, _)| score > s).unwrap_or(true) {
+                    best = Some((score, *c));
+                }
+            }
+            best.map(|(_, c)| c)
+        })
+        // Fallback: pick by closest PID in tree (child-first)
+        .or_else(|| {
+            candidates
+                .iter()
+                .min_by_key(|(_, pid)| {
+                    process_tree
+                        .iter()
+                        .position(|p| p == pid)
+                        .unwrap_or(usize::MAX)
+                })
+                .copied()
+        });
     (candidates.clone(), best)
 }
 
@@ -725,4 +798,70 @@ pub fn activate_window(_hwnd: isize) {}
 #[cfg(not(windows))]
 pub fn get_work_area() -> (f64, f64, f64, f64) {
     (0.0, 0.0, 1920.0, 1080.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn score_exact_segment_beats_app_suffix() {
+        // Real bug from logs: hint="studio", multiple VS Code windows where the
+        // "Visual Studio Code" suffix substring-matches every window. The window
+        // whose folder segment is exactly "studio" must win.
+        let studio = "Foo.ts - studio - Visual Studio Code";
+        let siljeok = "Bar.ts - siljeok-tracker - Visual Studio Code";
+        let vchat = "qa.md - vchatcloud-desk-frontend - Visual Studio Code";
+        assert!(score_title_match(studio, "studio") > score_title_match(siljeok, "studio"));
+        assert!(score_title_match(studio, "studio") > score_title_match(vchat, "studio"));
+    }
+
+    #[test]
+    fn score_zero_when_hint_absent() {
+        assert_eq!(score_title_match("Notepad", "studio"), 0);
+    }
+
+    #[test]
+    fn score_zero_when_hint_empty() {
+        assert_eq!(score_title_match("Anything", ""), 0);
+    }
+
+    #[test]
+    fn score_word_boundary_match_in_dashed_folder() {
+        // hint="tracker" should match folder "siljeok-tracker" via word boundary.
+        let title = "Bar.ts - siljeok-tracker - Visual Studio Code";
+        assert!(score_title_match(title, "tracker") >= 50);
+    }
+
+    #[test]
+    fn score_substring_only_in_app_suffix_is_lowest() {
+        // "studio" appearing only inside the dropped app-name segment ranks below
+        // a content-segment substring match.
+        let only_suffix = "Foo.ts - mybar - Visual Studio Code";
+        let in_content = "Foo.ts - studiothing - SomeApp";
+        assert!(score_title_match(in_content, "studio") > score_title_match(only_suffix, "studio"));
+    }
+
+    #[test]
+    fn score_case_insensitive() {
+        assert_eq!(
+            score_title_match("Foo - STUDIO - Visual Studio Code", "studio"),
+            score_title_match("Foo - studio - Visual Studio Code", "studio"),
+        );
+    }
+
+    #[test]
+    fn score_unicode_folder() {
+        let title = "파일.txt - 프로젝트 - Visual Studio Code";
+        assert_eq!(score_title_match(title, "프로젝트"), 100);
+    }
+
+    #[test]
+    fn contains_word_respects_dashes_and_alphanumerics() {
+        assert!(contains_word("siljeok-tracker", "tracker"));
+        assert!(contains_word("siljeok-tracker", "siljeok"));
+        assert!(!contains_word("studiox", "studio"));
+        assert!(!contains_word("xstudio", "studio"));
+        assert!(contains_word("a studio b", "studio"));
+    }
 }
