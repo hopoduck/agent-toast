@@ -229,7 +229,7 @@ async function onClose() {
 <template>
   <div class="bg-background h-full">
     <div
-      class="max-w-[520px] mx-auto h-screen flex flex-col gap-4 p-6 overflow-y-auto"
+      class="h-screen flex flex-col gap-4 p-6 overflow-y-auto"
     >
       <!-- Header -->
       <div class="flex items-center justify-between">
