@@ -23,6 +23,7 @@ import AboutSettings from "./components/AboutSettings.vue";
 import GeneralSettings from "./components/GeneralSettings.vue";
 import HookSettings from "./components/HookSettings.vue";
 import HowtoSettings from "./components/HowtoSettings.vue";
+import RemoteSettings from "./components/RemoteSettings.vue";
 import SlidingTabs from "./components/SlidingTabs.vue";
 import type { HookConfig } from "./types";
 
@@ -103,14 +104,14 @@ function normalizePath(p: string): string {
 onMounted(async () => {
   // Check URL hash for initial tab
   const hash = window.location.hash.slice(1);
-  if (hash && ["general", "hooks", "howto", "about"].includes(hash)) {
+  if (hash && ["general", "hooks", "remote", "howto", "about"].includes(hash)) {
     activeTab.value = hash;
   }
 
   // Listen for hash changes (when window already exists)
   window.addEventListener("hashchange", () => {
     const h = window.location.hash.slice(1);
-    if (h && ["general", "hooks", "howto", "about"].includes(h)) {
+    if (h && ["general", "hooks", "remote", "howto", "about"].includes(h)) {
       activeTab.value = h;
     }
   });
@@ -322,6 +323,7 @@ async function onClose() {
           :tabs="[
             { value: 'general', label: t('setup.tab_general') },
             { value: 'hooks', label: t('setup.tab_hooks') },
+            { value: 'remote', label: t('setup.tab_remote') },
             { value: 'howto', label: t('setup.tab_howto') },
             { value: 'about', label: t('setup.tab_about') },
           ]"
@@ -334,6 +336,7 @@ async function onClose() {
             @test-notification="onTestNotification"
           />
           <HookSettings v-if="activeTab === 'hooks'" v-model="config" />
+          <RemoteSettings v-if="activeTab === 'remote'" v-model="config" />
           <HowtoSettings v-if="activeTab === 'howto'" />
           <AboutSettings v-if="activeTab === 'about'" />
         </div>
