@@ -9,14 +9,18 @@
 <h1 align="center">Agent Toast</h1>
 
 <p align="center">
-  <strong>Smart Desktop Notification App for Windows</strong><br>
-  Never miss events from your AI coding assistants
+  <strong>Stop watching the terminal while AI works</strong><br>
+  Get notified the moment your agent is done
 </p>
 
 <p align="center">
   <a href="https://github.com/hopoduck/agent-toast/releases"><img src="https://img.shields.io/github/v/release/hopoduck/agent-toast?style=flat-square" alt="Release"></a>
   <a href="https://github.com/hopoduck/agent-toast/blob/master/LICENSE"><img src="https://img.shields.io/github/license/hopoduck/agent-toast?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
+</p>
+
+<p align="center">
+  <img src=".github/media/intro.webp" width="720" alt="Agent Toast Preview">
 </p>
 
 ---
@@ -29,12 +33,6 @@
 - **Notification Sound** - System alert sound so you never miss an event (toggleable in settings)
 - **Multilingual UI** - Korean/English support
 - **Auto Update** - New version notifications with one-click update
-
-## 📸 Screenshot
-
-<p align="center">
-  <img src=".github/screenshots/notifications.png" width="400" alt="Notification Example">
-</p>
 
 ## 🔌 Supported Platforms
 

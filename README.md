@@ -9,14 +9,18 @@
 <h1 align="center">Agent Toast</h1>
 
 <p align="center">
-  <strong>Windows용 스마트 데스크톱 알림 앱</strong><br>
-  AI 코딩 어시스턴트의 이벤트를 놓치지 마세요
+  <strong>AI 작업을 기다리며 터미널을 지켜볼 필요 없습니다</strong><br>
+  에이전트가 끝나면 알림으로 정확한 순간에 돌아오세요
 </p>
 
 <p align="center">
   <a href="https://github.com/hopoduck/agent-toast/releases"><img src="https://img.shields.io/github/v/release/hopoduck/agent-toast?style=flat-square" alt="Release"></a>
   <a href="https://github.com/hopoduck/agent-toast/blob/master/LICENSE"><img src="https://img.shields.io/github/license/hopoduck/agent-toast?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
+</p>
+
+<p align="center">
+  <img src=".github/media/intro.webp" width="720" alt="Agent Toast 미리보기">
 </p>
 
 ---
@@ -29,12 +33,6 @@
 - **알림 사운드** - 시스템 알림음으로 이벤트를 놓치지 않음 (설정에서 on/off)
 - **다국어 지원** - 한국어/영어 UI
 - **자동 업데이트** - 새 버전 알림 및 원클릭 업데이트
-
-## 📸 스크린샷
-
-<p align="center">
-  <img src=".github/screenshots/notifications.png" width="400" alt="알림 예시">
-</p>
 
 ## 🔌 지원 플랫폼
 

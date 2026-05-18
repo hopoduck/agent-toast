@@ -1,0 +1,20 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable.css";
+
+@theme inline {
+  /* Real values from src/global.css */
+  --color-event-success: oklch(0.765 0.17 162);
+  --color-event-success-deep: oklch(0.7 0.17 162);
+  /* Restored to the real alpha (0.6) — same as App.vue.
+     The video has the note app underneath, so the see-through is natural. */
+  --color-overlay-bg: oklch(0.18 0.005 280 / 0.6);
+  --color-overlay-subtle: oklch(0.95 0 0 / 0.05);
+  --color-overlay-border: oklch(0.95 0 0 / 0.2);
+  /* Default sans for the whole video. The terminal uses its own monospace. */
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+/* Pretendard as the base body font so components without explicit font-family inherit it. */
+html, body {
+  font-family: var(--font-sans);
+}
