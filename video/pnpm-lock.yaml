@@ -11,6 +11,12 @@ importers:
       '@remotion/cli':
         specifier: ^4.0.0
         version: 4.0.462(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@remotion/google-fonts':
+        specifier: ^4.0.471
+        version: 4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@remotion/transitions':
+        specifier: ^4.0.471
+        version: 4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
@@ -341,6 +347,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@remotion/google-fonts@4.0.471':
+    resolution: {integrity: sha512-8K9m7+7mmaPsl4q2Y0s6T6dDwuQdu0meF5m57S0wC1/KcwqDSCceOwFf4agbGifH00LKHPduRJsVjkumnzwuag==}
+
   '@remotion/licensing@4.0.462':
     resolution: {integrity: sha512-NbTiGVmqp7NJsLbjJP84jB5oLO92a6TJiq2KckpdpZlekLPbITpKp984rXMZjZgE/B0LkeYkIHRNO75AikFQLQ==}
 
@@ -353,6 +362,9 @@ packages:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
+  '@remotion/paths@4.0.471':
+    resolution: {integrity: sha512-oqhaM+eNNRHlzFr4EKT7RxQcNRCDGmhlfJ+AObx3Wkm+/W03OAazl+LgSE3DCNih5nMyKxFk+OIe3kT7stDuAg==}
+
   '@remotion/player@4.0.462':
     resolution: {integrity: sha512-w/zBCWwLXsoNwsokaPwKxpdv+CBw52FuR3pQZegZvcnKwx1d8bq2P4xBjhCs+o5XP7kiRS0FQIIFYiCmXZXYgw==}
     peerDependencies:
@@ -361,6 +373,12 @@ packages:
 
   '@remotion/renderer@4.0.462':
     resolution: {integrity: sha512-qwOsGvtGb3CIpYMrVeO+wTwJN+C3uigT9gKyM0tl24IrPbq8UWqkX1mDJv5pYcWUbCj1mEdeakh7ue9+zgdEgA==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  '@remotion/shapes@4.0.471':
+    resolution: {integrity: sha512-0d16reYqrMkrxkEqzAjHZ4MypzYigyNpIui472tv+VotL+3Wbk1bZodya8jZc8x4Px6VDHCOxc+hY2n1EYdXxw==}
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
@@ -387,6 +405,12 @@ packages:
 
   '@remotion/timeline-utils@4.0.462':
     resolution: {integrity: sha512-xC6ErhwO9Jz6oP+0vfJHJVxEl7ZVTbyJOEbz4BzT1h0Wq4f6d9hH7d8VvmrvZ2IQwb1VaqrkR7URvaW+VfJ14A==}
+
+  '@remotion/transitions@4.0.471':
+    resolution: {integrity: sha512-808lx3UZ45veB+20i9fFUqjDh98rlrCGbz6Eko/h39zDR4Wj8wv2EPo9LaEPIaPD/0VvkcRw0TBidewdmiCaoQ==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
 
   '@remotion/web-renderer@4.0.462':
     resolution: {integrity: sha512-Wj2IIACwNaRWGxc79LKs1vzbIEzhvs63u1rnJwvh+EDuHbhMZBCU7wJGVuSKZifNsKb9k999HiSS43d+j1OhpQ==}
@@ -1124,6 +1148,12 @@ packages:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
+  remotion@4.0.471:
+    resolution: {integrity: sha512-2ei7jYzAHx/UNyQyPvCiXA/fhxYSvUD9mXBIOOmjMjBApfeeHUzAhQCT2ytcExVmTmY2QMpLdjj20YROQjYvMA==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
     engines: {node: '>=0.10.0'}
@@ -1614,6 +1644,13 @@ snapshots:
   '@remotion/compositor-win32-x64-msvc@4.0.462':
     optional: true
 
+  '@remotion/google-fonts@4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      remotion: 4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+    transitivePeerDependencies:
+      - react
+      - react-dom
+
   '@remotion/licensing@4.0.462': {}
 
   '@remotion/media-parser@4.0.462': {}
@@ -1624,6 +1661,8 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       remotion: 4.0.462(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+
+  '@remotion/paths@4.0.471': {}
 
   '@remotion/player@4.0.462(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
@@ -1654,6 +1693,12 @@ snapshots:
       - bufferutil
       - supports-color
       - utf-8-validate
+
+  '@remotion/shapes@4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@remotion/paths': 4.0.471
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
 
   '@remotion/streaming@4.0.462': {}
 
@@ -1732,6 +1777,14 @@ snapshots:
   '@remotion/timeline-utils@4.0.462':
     dependencies:
       mediabunny: 1.45.0
+
+  '@remotion/transitions@4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@remotion/paths': 4.0.471
+      '@remotion/shapes': 4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      remotion: 4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
   '@remotion/web-renderer@4.0.462(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
@@ -2426,6 +2479,11 @@ snapshots:
       tslib: 2.8.1
 
   remotion@4.0.462(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+    dependencies:
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+
+  remotion@4.0.471(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)

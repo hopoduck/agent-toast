@@ -5,10 +5,14 @@
   "description": "Remotion intro video for agent-toast README",
   "scripts": {
     "dev": "pnpm exec remotion studio src/Root.tsx",
-    "render": "pnpm exec remotion render src/Root.tsx IntroVideo ../.github/media/intro.mp4 --codec=h264"
+    "render": "pnpm exec remotion render src/Root.tsx IntroVideo ../.github/media/intro.mp4 --codec=h264 --crf=23",
+    "render:debug": "pnpm exec remotion render src/Root.tsx IntroVideoDebug out/preview.mp4 --codec=h264 --scale=0.5 --crf=30 --jpeg-quality=70",
+    "still": "pnpm exec remotion still src/Root.tsx IntroVideo out/frame.png --scale=1"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.471",
+    "@remotion/transitions": "^4.0.471",
     "lucide-react": "^1.16.0",
     "pretendard": "^1.3.9",
     "react": "^19.0.0",
