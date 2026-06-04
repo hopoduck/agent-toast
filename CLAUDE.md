@@ -33,7 +33,7 @@ pnpm vue-tsc --noEmit                                      # Type check only
 
 ### CI Checks (GitHub Actions)
 
-On push/PR to `master`, the `check.yml` workflow runs on `windows-latest`: `cargo fmt --check --all`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, `pnpm vue-tsc --noEmit`. A second `check-send-linux` job on `ubuntu-latest` additionally verifies that `agent-toast-send` builds for `x86_64-unknown-linux-musl`. All must pass before merge.
+On push/PR to `master`, the `check.yml` workflow runs on `windows-latest`: `cargo fmt --check --all`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, `pnpm vue-tsc --noEmit`. A second `check-send-linux` job on `ubuntu-latest` verifies `agent-toast-send` builds for `x86_64-unknown-linux-musl` and runs the `agent-toast-send` / `agent-toast-core` tests on Linux. All must pass before merge.
 
 ## Architecture
 
@@ -110,7 +110,7 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 
 | File                             | Purpose                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------ |
-| `App.vue`                        | Notification window UI with event-type color coding, auto-dismiss progress bar |
+| `App.vue`                        | Notification window UI — event-type color coding, auto-dismiss progress bar, inline markdown body (markdown-it, escaped), light/dark theme |
 | `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / howto / about) |
 | `components/GeneralSettings.vue` | Position, auto-dismiss, sound settings                                         |
 | `components/HookSettings.vue`    | Per-event hook enable/message config for 15 Claude Code hook events            |
@@ -146,3 +146,7 @@ Events: `task_complete`, `user_input_required`, `error`
 
 - `~/.claude/settings.json`: Claude Code hook settings (read/written by setup.rs, preserves non-agent-toast hooks)
 - `~/.codex/config.toml`: Codex CLI notification hook settings
+
+## Intro Video (`video/`)
+
+Separate Remotion project (own `package.json`, not part of the pnpm/Cargo workspaces) that renders the README intro video (`.github/media/intro.webp`). See `video/CLAUDE.md` for render commands, fps-relative timing rules, and the mp4 → animated webp conversion guide.

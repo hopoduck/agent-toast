@@ -23,8 +23,6 @@
   <img src=".github/media/intro.webp" width="720" alt="Agent Toast 미리보기">
 </p>
 
----
-
 ## ✨ 주요 기능
 
 - **스마트 알림** - 알림 클릭 → 터미널 즉시 활성화, 터미널 복귀 시 알림 자동 소멸, 이미 포커스 중이면 알림 생략
@@ -59,55 +57,6 @@ pnpm install
 pnpm tauri build
 ```
 
-## 🌐 원격 알림 (Linux 서버)
-
-원격 Linux 서버에서 실행하는 Claude Code 훅이 Windows 데스크톱의 Agent Toast 에 알림을 띄우도록 설정할 수 있습니다.
-
-### 1. 데스크톱: HTTP 수신 활성화
-
-Agent Toast 설정 창 → **원격 알림** → **HTTP 수신 활성화** 토글 ON. 기본 포트는 `38787` 이며 설정에서 변경 가능. 바인딩 주소는 항상 `0.0.0.0` 입니다.
-
-Windows 방화벽이 처음 허용 여부를 물을 수 있습니다. Tailscale 이나 SSH 포트 포워딩 사용 시 **개인 네트워크** 만 허용해도 충분합니다.
-
-### 2. 서버: `agent-toast-send` 바이너리 설치
-
-#### x86_64
-```bash
-curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-x86_64 \
-  -o ~/.local/bin/agent-toast-send
-chmod +x ~/.local/bin/agent-toast-send
-```
-
-#### aarch64 (Arm64, 라즈베리파이 / Arm VPS)
-```bash
-curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-aarch64 \
-  -o ~/.local/bin/agent-toast-send
-chmod +x ~/.local/bin/agent-toast-send
-```
-
-### 3. 훅 등록
-
-```bash
-agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
-```
-
-- `<desktop-ip>` 는 서버에서 데스크톱에 도달 가능한 주소 (Tailscale, LAN, SSH `-R`). 네트워크 도달성은 사용자 책임이며 앱이 관리하지 않습니다.
-- `--hostname` 은 선택 사항으로, 토스트에 표시되는 라벨입니다. 생략 시 `hostname(1)` 자동 감지.
-
-등록된 기본 훅:
-- **Stop** — 작업 완료 알림
-- **Notification (permission_prompt)** — 권한 요청 알림
-
-더 세밀한 훅 커스터마이즈는 서버의 `~/.claude/settings.json` 을 직접 편집하면 됩니다.
-
-### 해제
-
-```bash
-agent-toast-send uninstall
-```
-
-agent-toast 관련 훅만 제거하고 다른 훅은 보존합니다.
-
 ## 🚀 사용법
 
 ### 1. 설정 창 열기
@@ -135,24 +84,55 @@ agent-toast.exe --setup
 - Win32 API로 포커스 변화를 실시간 감지하여 알림 자동 소멸 처리
 - 프로세스 트리 탐색으로 `--pid`에서 터미널 창 탐지 정확도 개선
 
+## 🌐 원격 알림 (Linux 서버)
+
+원격 Linux 서버에서 실행하는 Claude Code 훅 알림을 데스크톱 토스트로 받을 수 있습니다.
+
+<details>
+<summary><strong>설정 방법 펼치기</strong></summary>
+
+### 1. 데스크톱: HTTP 수신 활성화
+
+설정 창 → **원격 알림** → **HTTP 수신 활성화** 토글 ON. 기본 포트는 `38787`(설정에서 변경 가능), 바인딩 주소는 항상 `0.0.0.0` 입니다.
+
+Windows 방화벽이 처음 허용 여부를 물을 수 있습니다. Tailscale 이나 SSH 포트 포워딩 사용 시 **개인 네트워크** 만 허용해도 충분합니다.
+
+### 2. 서버: `agent-toast-send` 설치 + 훅 등록
+
+```bash
+curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-$(uname -m) \
+  -o ~/.local/bin/agent-toast-send
+chmod +x ~/.local/bin/agent-toast-send
+
+agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
+```
+
+- `<desktop-ip>` 는 서버에서 데스크톱에 도달 가능한 주소 (Tailscale, LAN, SSH `-R`). 네트워크 도달성은 사용자 책임이며 앱이 관리하지 않습니다.
+- `--hostname` 은 토스트에 표시되는 라벨 (생략 시 `hostname(1)` 자동 감지).
+- 기본 등록 훅: **Stop**(작업 완료), **Notification**(권한 요청). 더 세밀한 커스터마이즈는 서버의 `~/.claude/settings.json` 을 직접 편집하면 됩니다.
+
+해제는 `agent-toast-send uninstall` — agent-toast 관련 훅만 제거하고 다른 훅은 보존합니다.
+
+</details>
+
 ## 🔍 다른 알림 도구와 비교
 
-| | **Agent Toast** | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell 스크립트** | [**ntfy.sh**](https://ntfy.sh) |
-| --- | --- | --- | --- | --- | --- |
-| **알림 방식** | 커스텀 알림 창 | OS 네이티브 토스트 | OS 네이티브 토스트 | OS 네이티브 토스트 | HTTP 푸시 알림 |
-| **플랫폼** | Windows | Windows | Windows · macOS · Linux | Windows | 전체 (모바일 포함) |
-| **설치 방식** | 인스톨러 / 포터블 | CLI 바이너리 | CLI 바이너리 | 스크립트 복사 | curl 한 줄 |
-| **GUI 설정** | ✅ 설정 창 제공 | ❌ CLI만 | ❌ CLI만 | ❌ 수동 편집 | ❌ 수동 편집 |
-| **스마트 알림**¹ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **알림 클릭 → 터미널 활성화** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **멀티 모니터 · 위치 선택** | ✅ 4코너 + 모니터 선택 | ❌ | ❌ | ❌ | ❌ |
-| **DPI 스케일 대응** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **알림 사운드** | ✅ | ❌ | ✅ | ❌ | ✅ |
-| **자동 업데이트** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **원격 서버 알림 수신**² | ✅ 전용 CLI + HTTP 수신 | ❌ | ❌ | ❌ | ✅ |
-| **모바일 알림** | ❌ | ✅ (ntfy 연동) | ❌ | ❌ | ✅ |
-| **다중 AI 도구 지원** | Claude Code · Codex CLI | Claude · Copilot · Gemini · Codex 등 | Claude Code | Claude Code | 범용 |
-| **언어** | Rust + TypeScript | C++ | Rust | PowerShell | Shell (curl) |
+|                               | **Agent Toast**         | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell 스크립트** | [**ntfy.sh**](https://ntfy.sh) |
+| ----------------------------- | ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------- | ------------------------------ |
+| **알림 방식**                 | 커스텀 알림 창          | OS 네이티브 토스트                                 | OS 네이티브 토스트                                                                   | OS 네이티브 토스트      | HTTP 푸시 알림                 |
+| **플랫폼**                    | Windows                 | Windows                                            | Windows · macOS · Linux                                                              | Windows                 | 전체 (모바일 포함)             |
+| **설치 방식**                 | 인스톨러 / 포터블       | CLI 바이너리                                       | CLI 바이너리                                                                         | 스크립트 복사           | curl 한 줄                     |
+| **GUI 설정**                  | ✅ 설정 창 제공          | ❌ CLI만                                            | ❌ CLI만                                                                              | ❌ 수동 편집             | ❌ 수동 편집                    |
+| **스마트 알림**¹              | ✅                       | ❌                                                  | ❌                                                                                    | ❌                       | ❌                              |
+| **알림 클릭 → 터미널 활성화** | ✅                       | ❌                                                  | ❌                                                                                    | ❌                       | ❌                              |
+| **멀티 모니터 · 위치 선택**   | ✅ 4코너 + 모니터 선택   | ❌                                                  | ❌                                                                                    | ❌                       | ❌                              |
+| **DPI 스케일 대응**           | ✅                       | ❌                                                  | ❌                                                                                    | ❌                       | ❌                              |
+| **알림 사운드**               | ✅                       | ❌                                                  | ✅                                                                                    | ❌                       | ✅                              |
+| **자동 업데이트**             | ✅                       | ❌                                                  | ❌                                                                                    | ❌                       | ❌                              |
+| **원격 서버 알림 수신**²      | ✅ 전용 CLI + HTTP 수신  | ❌                                                  | ❌                                                                                    | ❌                       | ✅                              |
+| **모바일 알림**               | ❌                       | ✅ (ntfy 연동)                                      | ❌                                                                                    | ❌                       | ✅                              |
+| **다중 AI 도구 지원**         | Claude Code · Codex CLI | Claude · Copilot · Gemini · Codex 등               | Claude Code                                                                          | Claude Code             | 범용                           |
+| **언어**                      | Rust + TypeScript       | C++                                                | Rust                                                                                 | PowerShell              | Shell (curl)                   |
 
 > ¹ **스마트 알림**: 터미널이 이미 포커스 중이면 알림 생략 + 터미널 복귀 시 알림 자동 소멸
 >

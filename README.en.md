@@ -23,8 +23,6 @@
   <img src=".github/media/intro.webp" width="720" alt="Agent Toast Preview">
 </p>
 
----
-
 ## ✨ Features
 
 - **Smart Notifications** - Click to activate terminal, auto-dismiss on focus return, skip if already focused
@@ -59,55 +57,6 @@ pnpm install
 pnpm tauri build
 ```
 
-## 🌐 Remote Notifications (Linux Servers)
-
-You can configure Claude Code hooks running on a remote Linux server to send notifications to Agent Toast on your Windows desktop.
-
-### 1. Desktop: Enable HTTP Receiver
-
-Open the Agent Toast settings window → **Remote Notifications** → toggle **Enable HTTP receiver** ON. The default port is `38787` (changeable in settings); the bind address is always `0.0.0.0`.
-
-Windows Firewall may prompt for permission on first use. If you're using Tailscale or SSH port forwarding, allowing **private networks** only is sufficient.
-
-### 2. Server: Install `agent-toast-send` Binary
-
-#### x86_64
-```bash
-curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-x86_64 \
-  -o ~/.local/bin/agent-toast-send
-chmod +x ~/.local/bin/agent-toast-send
-```
-
-#### aarch64 (Arm64, Raspberry Pi / Arm VPS)
-```bash
-curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-aarch64 \
-  -o ~/.local/bin/agent-toast-send
-chmod +x ~/.local/bin/agent-toast-send
-```
-
-### 3. Register Hooks
-
-```bash
-agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
-```
-
-- `<desktop-ip>` is the address reachable from the server to your desktop (Tailscale, LAN, SSH `-R`). Network reachability is the user's responsibility and is not managed by the app.
-- `--hostname` is optional and sets the label shown in the toast. Omit to auto-detect via `hostname(1)`.
-
-Default hooks registered:
-- **Stop** — task completion notification
-- **Notification (permission_prompt)** — permission request notification
-
-For finer hook customization, edit `~/.claude/settings.json` on the server directly.
-
-### Uninstall
-
-```bash
-agent-toast-send uninstall
-```
-
-Only removes agent-toast related hooks; all other hooks are preserved.
-
 ## 🚀 Usage
 
 ### 1. Open Settings
@@ -135,24 +84,55 @@ Enable desired events in the settings window to automatically register hooks.
 - Real-time focus detection via Win32 API for automatic notification dismissal
 - Process tree traversal from `--pid` for improved terminal window detection accuracy
 
+## 🌐 Remote Notifications (Linux Servers)
+
+Receive Claude Code hook notifications from a remote Linux server as desktop toasts.
+
+<details>
+<summary><strong>Setup instructions</strong></summary>
+
+### 1. Desktop: Enable HTTP Receiver
+
+Settings window → **Remote Notifications** → toggle **Enable HTTP receiver** ON. The default port is `38787` (changeable in settings); the bind address is always `0.0.0.0`.
+
+Windows Firewall may prompt for permission on first use. If you're using Tailscale or SSH port forwarding, allowing **private networks** only is sufficient.
+
+### 2. Server: Install `agent-toast-send` + Register Hooks
+
+```bash
+curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-toast-send-linux-$(uname -m) \
+  -o ~/.local/bin/agent-toast-send
+chmod +x ~/.local/bin/agent-toast-send
+
+agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
+```
+
+- `<desktop-ip>` is the address reachable from the server to your desktop (Tailscale, LAN, SSH `-R`). Network reachability is the user's responsibility and is not managed by the app.
+- `--hostname` sets the label shown in the toast (omit to auto-detect via `hostname(1)`).
+- Default hooks registered: **Stop** (task completion), **Notification** (permission request). For finer customization, edit `~/.claude/settings.json` on the server directly.
+
+To uninstall, run `agent-toast-send uninstall` — only removes agent-toast related hooks; all other hooks are preserved.
+
+</details>
+
 ## 🔍 Comparison with Other Notification Tools
 
-| | **Agent Toast** | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell Script** | [**ntfy.sh**](https://ntfy.sh) |
-| --- | --- | --- | --- | --- | --- |
-| **Notification Style** | Custom notification window | OS native toast | OS native toast | OS native toast | HTTP push notification |
-| **Platform** | Windows | Windows | Windows · macOS · Linux | Windows | All (incl. mobile) |
-| **Installation** | Installer / Portable | CLI binary | CLI binary | Copy script | One-line curl |
-| **GUI Settings** | ✅ Settings window | ❌ CLI only | ❌ CLI only | ❌ Manual edit | ❌ Manual edit |
-| **Smart Notifications**¹ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Click → Activate Terminal** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Multi-Monitor · Position** | ✅ 4 corners + monitor | ❌ | ❌ | ❌ | ❌ |
-| **DPI Scaling** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Notification Sound** | ✅ | ❌ | ✅ | ❌ | ✅ |
-| **Auto Update** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Remote Server Notifications**² | ✅ Dedicated CLI + HTTP receiver | ❌ | ❌ | ❌ | ✅ |
-| **Mobile Notifications** | ❌ | ✅ (via ntfy) | ❌ | ❌ | ✅ |
-| **Multi AI Tool Support** | Claude Code · Codex CLI | Claude · Copilot · Gemini · Codex, etc. | Claude Code | Claude Code | Universal |
-| **Language** | Rust + TypeScript | C++ | Rust | PowerShell | Shell (curl) |
+|                                  | **Agent Toast**                 | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell Script** | [**ntfy.sh**](https://ntfy.sh) |
+| -------------------------------- | ------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------- | ------------------------------ |
+| **Notification Style**           | Custom notification window      | OS native toast                                    | OS native toast                                                                      | OS native toast       | HTTP push notification         |
+| **Platform**                     | Windows                         | Windows                                            | Windows · macOS · Linux                                                              | Windows               | All (incl. mobile)             |
+| **Installation**                 | Installer / Portable            | CLI binary                                         | CLI binary                                                                           | Copy script           | One-line curl                  |
+| **GUI Settings**                 | ✅ Settings window               | ❌ CLI only                                         | ❌ CLI only                                                                           | ❌ Manual edit         | ❌ Manual edit                  |
+| **Smart Notifications**¹         | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
+| **Click → Activate Terminal**    | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
+| **Multi-Monitor · Position**     | ✅ 4 corners + monitor           | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
+| **DPI Scaling**                  | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
+| **Notification Sound**           | ✅                               | ❌                                                  | ✅                                                                                    | ❌                     | ✅                              |
+| **Auto Update**                  | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
+| **Remote Server Notifications**² | ✅ Dedicated CLI + HTTP receiver | ❌                                                  | ❌                                                                                    | ❌                     | ✅                              |
+| **Mobile Notifications**         | ❌                               | ✅ (via ntfy)                                       | ❌                                                                                    | ❌                     | ✅                              |
+| **Multi AI Tool Support**        | Claude Code · Codex CLI         | Claude · Copilot · Gemini · Codex, etc.            | Claude Code                                                                          | Claude Code           | Universal                      |
+| **Language**                     | Rust + TypeScript               | C++                                                | Rust                                                                                 | PowerShell            | Shell (curl)                   |
 
 > ¹ **Smart Notifications**: Skip notification if terminal is already focused + auto-dismiss when terminal regains focus
 >
