@@ -140,6 +140,7 @@
     "links_title": "관련 링크",
     "star_message": "유용하게 사용하고 계신다면, GitHub에 Star 하나 남겨주세요!",
     "star_button": "GitHub에서 Star 누르기",
+    "star_thanks": "감사합니다! 큰 힘이 됩니다 ⭐",
     "made_with": "Rust + Tauri + Vue 3로 제작됨",
     "update_check": "업데이트 확인",
     "update_checking": "확인 중...",

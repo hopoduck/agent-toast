@@ -116,6 +116,8 @@ function onStarClick(e: MouseEvent) {
     shapes: ["star", "circle"],
   });
 
+  toast.success(t("about.star_thanks"));
+
   openUrl("https://github.com/hopoduck/agent-toast");
 }
 

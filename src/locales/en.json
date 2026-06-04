@@ -140,6 +140,7 @@
     "links_title": "Links",
     "star_message": "If you find this useful, please give us a star on GitHub!",
     "star_button": "Star on GitHub",
+    "star_thanks": "Thank you! Your star means a lot ⭐",
     "made_with": "Built with Rust + Tauri + Vue 3",
     "update_check": "Check for Updates",
     "update_checking": "Checking...",
