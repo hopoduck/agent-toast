@@ -28,9 +28,12 @@
 ## ✨ Features
 
 - **Smart Notifications** - Click to activate terminal, auto-dismiss on focus return, skip if already focused
+- **Agent Message Display** - Optionally show the agent's last message (or the tool description on permission requests) as the notification body
 - **15 Hook Events** - Task completion, permission requests, input waiting, session start/end, and more
+- **Remote Notifications** - Receive Claude Code hook notifications from remote Linux servers as desktop toasts
 - **Multi-Monitor Support** - Display notifications on any corner of your preferred monitor with DPI scaling
 - **Notification Sound** - System alert sound so you never miss an event (toggleable in settings)
+- **Light/Dark Theme** - Toast design follows your system theme; hover to pause auto-dismiss
 - **Multilingual UI** - Korean/English support
 - **Auto Update** - New version notifications with one-click update
 
@@ -119,6 +122,8 @@ Or right-click the system tray icon → Settings
 
 Enable desired events in the settings window to automatically register hooks.
 
+> 💡 Turn on **Use Agent's Message** in the General tab to show the agent's last message (or the tool description on permission requests) as the notification body instead of each hook's fixed text.
+
 | Platform    | Config File               |
 | ----------- | ------------------------- |
 | Claude Code | `~/.claude/settings.json` |
@@ -144,11 +149,14 @@ Enable desired events in the settings window to automatically register hooks.
 | **DPI Scaling** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Notification Sound** | ✅ | ❌ | ✅ | ❌ | ✅ |
 | **Auto Update** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Remote Server Notifications**² | ✅ Dedicated CLI + HTTP receiver | ❌ | ❌ | ❌ | ✅ |
 | **Mobile Notifications** | ❌ | ✅ (via ntfy) | ❌ | ❌ | ✅ |
 | **Multi AI Tool Support** | Claude Code · Codex CLI | Claude · Copilot · Gemini · Codex, etc. | Claude Code | Claude Code | Universal |
 | **Language** | Rust + TypeScript | C++ | Rust | PowerShell | Shell (curl) |
 
 > ¹ **Smart Notifications**: Skip notification if terminal is already focused + auto-dismiss when terminal regains focus
+>
+> ² **Remote Server Notifications**: Agent hooks running on a remote Linux server show toasts on your desktop (Toasty's ntfy integration is desktop→mobile outbound only)
 
 ## 🛠️ Tech Stack
 

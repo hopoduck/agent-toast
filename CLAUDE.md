@@ -65,6 +65,7 @@ crates/
     src/lib.rs
     src/wire.rs                     # NotifyRequest (+ hostname), WIRE_VERSION
     src/hook_config.rs              # merge_agent_toast_hooks, HookEntry, is_agent_toast_cmd
+    src/dynamic.rs                  # --dynamic: derive toast body from hook stdin JSON (tool_input.description → last_assistant_message → static --message)
   agent-toast-desktop/              # Windows-only Tauri app (was src-tauri/)
     src/main.rs, lib.rs, cli.rs, pipe.rs, http_server.rs,
     notification.rs, win32.rs, setup.rs, sound.rs, updater.rs
@@ -110,11 +111,13 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 | File                             | Purpose                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------ |
 | `App.vue`                        | Notification window UI with event-type color coding, auto-dismiss progress bar |
-| `Setup.vue`                      | Settings window with tab navigation (general / hooks)                          |
+| `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / howto / about) |
 | `components/GeneralSettings.vue` | Position, auto-dismiss, sound settings                                         |
 | `components/HookSettings.vue`    | Per-event hook enable/message config for 15 Claude Code hook events            |
+| `components/RemoteSettings.vue`  | Remote HTTP receiver settings + `agent-toast-send` setup guide                 |
+| `components/HowtoSettings.vue`   | Usage guide tab                                                                |
 | `components/AboutSettings.vue`   | About tab with version info and links                                          |
-| `i18n.ts`                        | Internationalization (Korean/English) — reactive locale switching              |
+| `i18n.ts`                        | vue-i18n setup — locale strings live in `src/locales/{ko,en}.json`             |
 | `types.ts`                       | Shared TypeScript interfaces (`HookConfig`, `NotificationData`, etc.)          |
 
 ## CLI Usage
@@ -124,6 +127,7 @@ agent-toast.exe --pid 1234 --event task_complete --message "Build done"
 agent-toast.exe --daemon          # Run in background without notification
 agent-toast.exe --setup           # Open settings window
 agent-toast.exe --codex           # Codex CLI integration notification
+agent-toast.exe --pid 1234 --event task_complete --dynamic   # Derive body from hook stdin JSON (falls back to --message)
 ```
 
 Events: `task_complete`, `user_input_required`, `error`
