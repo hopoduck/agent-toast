@@ -24,6 +24,12 @@
   --color-overlay-bg: var(--overlay-bg);
   --color-overlay-border: var(--overlay-border);
   --color-overlay-subtle: var(--overlay-subtle);
+  --color-toast-surface-from: var(--toast-surface-from);
+  --color-toast-surface-to: var(--toast-surface-to);
+  --color-toast-border: var(--toast-border);
+  --color-toast-highlight: var(--toast-highlight);
+  --color-toast-fg: var(--toast-fg);
+  --color-toast-fg-dim: var(--toast-fg-dim);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -104,6 +110,16 @@
   --overlay-bg: oklch(0.18 0.005 280 / 0.6);
   --overlay-border: oklch(1 0 0 / 0.08);
   --overlay-subtle: oklch(1 0 0 / 0.08);
+  /* Toast surface — light (translucent glass, softened off-white) */
+  --toast-surface-from: oklch(0.965 0.006 280 / 0.88);
+  --toast-surface-to: oklch(0.925 0.008 280 / 0.8);
+  --toast-border: oklch(0.2 0 0 / 0.06);
+  --toast-highlight: oklch(1 0 0 / 0.8);
+  --toast-fg: oklch(0.28 0.012 280);
+  --toast-fg-dim: oklch(0.28 0.012 280 / 0.8);
+  --toast-glow: 26%;
+  --toast-ring: 18%;
+  --toast-shadow: 0 14px 32px -12px oklch(0.2 0.02 280 / 0.28);
   /* App base: #1a1a2e dark blue-purple */
   --background: oklch(0.9856 0.0084 56.3169);
   --foreground: oklch(0.3353 0.0132 2.7676);
@@ -189,6 +205,16 @@
   --overlay-bg: oklch(0.18 0.005 280 / 0.6);
   --overlay-border: oklch(1 0 0 / 0.08);
   --overlay-subtle: oklch(1 0 0 / 0.08);
+  /* Toast surface — dark (translucent glass) */
+  --toast-surface-from: oklch(0.27 0.012 280 / 0.82);
+  --toast-surface-to: oklch(0.17 0.012 280 / 0.72);
+  --toast-border: oklch(1 0 0 / 0.05);
+  --toast-highlight: oklch(1 0 0 / 0.1);
+  --toast-fg: oklch(0.95 0.01 280);
+  --toast-fg-dim: oklch(0.95 0.01 280 / 0.6);
+  --toast-glow: 22%;
+  --toast-ring: 8%;
+  --toast-shadow: 0 14px 32px -10px oklch(0 0 0 / 0.6);
   --background: oklch(0.2569 0.0169 352.4042);
   --foreground: oklch(0.9397 0.0119 51.3156);
   --card: oklch(0.3184 0.0176 341.4465);

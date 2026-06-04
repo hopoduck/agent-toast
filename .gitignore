@@ -36,3 +36,6 @@ PRD.md
 *.njsproj
 *.sln
 *.sw?
+
+# Superpowers brainstorm artifacts
+.superpowers/

@@ -19,21 +19,44 @@ const notification = ref<NotificationData | null>(null);
 const show = ref(false);
 const isDevMode = ref(false);
 const dismissActive = ref(false);
+const dismissPaused = ref(false);
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 let currentNotificationId: string | null = null;
+let dismissStartedAt = 0;
+let dismissRemainingMs = 0;
 
 function startDismissTimer() {
   if (dismissTimer) clearTimeout(dismissTimer);
   dismissActive.value = false;
   const seconds = notification.value?.auto_dismiss_seconds ?? 0;
   if (seconds > 0) {
+    dismissRemainingMs = seconds * 1000;
+    dismissPaused.value = false;
     requestAnimationFrame(() => {
       dismissActive.value = true;
     });
-    dismissTimer = setTimeout(() => {
-      onClose();
-    }, seconds * 1000);
+    dismissStartedAt = performance.now();
+    dismissTimer = setTimeout(onClose, dismissRemainingMs);
   }
+}
+
+function pauseDismiss() {
+  if (dismissTimer === null || dismissPaused.value) return;
+  clearTimeout(dismissTimer);
+  dismissTimer = null;
+  dismissRemainingMs -= performance.now() - dismissStartedAt;
+  dismissPaused.value = true;
+}
+
+function resumeDismiss() {
+  if (!dismissPaused.value) return;
+  dismissPaused.value = false;
+  if (dismissRemainingMs <= 0) {
+    onClose();
+    return;
+  }
+  dismissStartedAt = performance.now();
+  dismissTimer = setTimeout(onClose, dismissRemainingMs);
 }
 
 const isCodex = computed(() => notification.value?.source === "codex");
@@ -94,6 +117,7 @@ const eventStyles: Record<
     label: string;
     viewBtn: string;
     dismissBar: string;
+    accentVar: string;
   }
 > = {
   default: {
@@ -101,40 +125,45 @@ const eventStyles: Record<
     icon: "bg-event-default/20 text-event-default",
     label: "text-event-default",
     viewBtn:
-      "bg-event-default/20 text-event-default border-event-default/40 hover:bg-event-default/30",
+      "bg-event-default text-zinc-950 border-transparent hover:bg-event-default-to",
     dismissBar: "bg-overlay-border/25",
+    accentVar: "var(--event-default)",
   },
   success: {
     accent: "bg-gradient-to-b from-event-success to-event-success-deep",
     icon: "bg-event-success/20 text-event-success",
     label: "text-event-success",
     viewBtn:
-      "bg-event-success/20 text-event-success border-event-success/40 hover:bg-event-success/30",
+      "bg-event-success text-zinc-950 border-transparent hover:bg-event-success-deep",
     dismissBar: "bg-event-success/30",
+    accentVar: "var(--event-success)",
   },
   warning: {
     accent: "bg-gradient-to-b from-event-warning to-event-warning-deep",
     icon: "bg-event-warning/20 text-event-warning",
     label: "text-event-warning",
     viewBtn:
-      "bg-event-warning/20 text-event-warning border-event-warning/40 hover:bg-event-warning/30",
+      "bg-event-warning text-zinc-950 border-transparent hover:bg-event-warning-deep",
     dismissBar: "bg-event-warning/30",
+    accentVar: "var(--event-warning)",
   },
   error: {
     accent: "bg-gradient-to-b from-event-error to-event-error-deep",
     icon: "bg-event-error/20 text-event-error",
     label: "text-event-error",
     viewBtn:
-      "bg-event-error/20 text-event-error border-event-error/40 hover:bg-event-error/30",
+      "bg-event-error text-zinc-950 border-transparent hover:bg-event-error-deep",
     dismissBar: "bg-event-error/30",
+    accentVar: "var(--event-error)",
   },
   codex: {
     accent: "bg-gradient-to-b from-event-codex to-event-codex-deep",
     icon: "bg-event-codex/20 text-event-codex",
     label: "text-event-codex",
     viewBtn:
-      "bg-event-codex/20 text-event-codex border-event-codex/40 hover:bg-event-codex/30",
+      "bg-event-codex text-zinc-950 border-transparent hover:bg-event-codex-deep",
     dismissBar: "bg-event-codex/30",
+    accentVar: "var(--event-codex)",
   },
 };
 
@@ -145,16 +174,29 @@ function showNotification() {
   if (!id || id === currentNotificationId) return;
   currentNotificationId = id;
 
+  // double rAF: 초기 상태(opacity-0/scale)를 한 프레임 그린 뒤 토글해야 전환이 재생됨
   requestAnimationFrame(() => {
-    show.value = true;
-    startDismissTimer();
+    requestAnimationFrame(() => {
+      show.value = true;
+      startDismissTimer();
+    });
   });
+}
+
+function applyTheme(theme: string) {
+  const dark =
+    theme === "dark" ||
+    (theme === "system" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
 }
 
 onMounted(async () => {
   try {
     const savedLocale = await invoke<string>("get_locale");
     if (savedLocale) locale.value = savedLocale;
+    const savedTheme = await invoke<string>("get_theme");
+    applyTheme(savedTheme || "system");
     isDevMode.value = await invoke<boolean>("is_dev_mode");
   } catch {
     /* ignore */
@@ -185,7 +227,7 @@ async function onView() {
     await invoke("open_settings", { tab: "about" });
     setTimeout(async () => {
       await invoke("close_notify", { id: closeId });
-    }, 200);
+    }, 300);
     return;
   }
 
@@ -229,22 +271,36 @@ async function onClose() {
   currentNotificationId = null;
   setTimeout(async () => {
     await invoke("close_notify", { id: closeId });
-  }, 200);
+  }, 300);
 }
 </script>
 
 <template>
   <div
     v-if="notification"
-    class="h-screen flex rounded-xl overflow-hidden bg-overlay-bg select-none opacity-0 translate-x-5 transition-all duration-300 ease-out"
-    :class="{ 'opacity-100! translate-x-0!': show }"
+    class="relative h-screen flex rounded-xl overflow-hidden select-none bg-gradient-to-b from-toast-surface-from to-toast-surface-to shadow-[var(--toast-shadow)] opacity-0 translate-x-5 scale-[0.97] transition-all duration-300 ease-out"
+    :class="{ 'opacity-100! translate-x-0! scale-100!': show }"
+    :style="{ '--toast-accent': styles.accentVar }"
+    @mouseenter="pauseDismiss"
+    @mouseleave="resumeDismiss"
   >
+    <!-- Event-color corner glow + edge ring -->
+    <div
+      class="pointer-events-none absolute inset-0 rounded-xl z-0"
+      :style="{
+        background:
+          'radial-gradient(150px 80px at 0% 0%, color-mix(in oklch, var(--toast-accent) var(--toast-glow), transparent), transparent 72%)',
+        boxShadow:
+          'inset 0 0 0 1px color-mix(in oklch, var(--toast-accent) var(--toast-ring), transparent), inset 0 1px 0 0 var(--toast-highlight)',
+      }"
+    />
+
     <!-- Accent bar -->
-    <div class="w-1 shrink-0" :class="styles.accent" />
+    <div class="relative z-10 w-1 shrink-0" :class="styles.accent" />
 
     <!-- Content -->
     <div
-      class="relative flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-lg"
+      class="relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0"
     >
       <!-- Dismiss progress -->
       <div
@@ -264,6 +320,7 @@ async function onClose() {
                   animationName: 'shrink',
                   animationTimingFunction: 'linear',
                   animationFillMode: 'forwards',
+                  animationPlayState: dismissPaused ? 'paused' : 'running',
                 }
               : {}
           "
@@ -296,7 +353,7 @@ async function onClose() {
           >
         </div>
         <button
-          class="size-6 flex items-center justify-center rounded-md text-white/50 hover:text-white/80 hover:bg-white/10 transition-colors"
+          class="size-6 flex items-center justify-center rounded-md text-toast-fg-dim hover:text-toast-fg hover:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)] transition-colors"
           @click="onClose"
           :aria-label="t('notification.close')"
         >
@@ -307,19 +364,19 @@ async function onClose() {
       <!-- Body -->
       <div class="flex flex-col gap-0.5 min-w-0">
         <div
-          class="text-[14px] font-medium text-white/90 truncate leading-snug"
+          class="text-[14px] font-semibold text-toast-fg truncate leading-snug"
         >
           {{ truncate(notification.window_title) }}
           <span
             v-if="hostnameLabel"
-            class="ml-1.5 text-[11px] font-normal text-white/55"
+            class="ml-1.5 text-[11px] font-normal text-toast-fg-dim"
           >
             @ {{ truncate(hostnameLabel) }}
           </span>
         </div>
         <div
           v-if="notification.message"
-          class="text-xs text-white/60 truncate leading-snug"
+          class="text-xs text-toast-fg-dim truncate leading-snug"
         >
           {{ truncate(notification.message) }}
         </div>
@@ -329,7 +386,7 @@ async function onClose() {
       <div class="flex gap-1.5">
         <button
           v-if="!isRemote || isUpdateAvailable"
-          class="flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-medium rounded-md border transition-colors"
+          class="flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-semibold rounded-md border transition-colors"
           :class="styles.viewBtn"
           @click="onView"
         >
@@ -337,7 +394,7 @@ async function onClose() {
           {{ viewButtonText }}
         </button>
         <button
-          class="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-white/15 text-white/80 border border-white/20 hover:bg-white/25 transition-colors"
+          class="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-[color-mix(in_oklch,var(--toast-fg)_7%,transparent)] text-toast-fg border border-toast-border hover:bg-[color-mix(in_oklch,var(--toast-fg)_14%,transparent)] transition-colors"
           @click="onClose"
         >
           {{ t("notification.close") }}

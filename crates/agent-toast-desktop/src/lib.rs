@@ -99,6 +99,16 @@ fn get_locale() -> String {
 }
 
 #[tauri::command]
+fn get_theme() -> String {
+    setup::read_theme()
+}
+
+#[tauri::command]
+fn set_theme(theme: String) -> Result<(), String> {
+    setup::write_theme(&theme)
+}
+
+#[tauri::command]
 fn is_dev_mode() -> bool {
     cfg!(debug_assertions)
 }
@@ -345,6 +355,8 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             get_notification_data,
             test_notification,
             get_locale,
+            get_theme,
+            set_theme,
             is_dev_mode,
             is_portable,
             open_settings,

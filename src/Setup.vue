@@ -32,10 +32,46 @@ const activeTab = ref<string>("general");
 
 const isDark = ref(document.documentElement.classList.contains("dark"));
 
-function toggleTheme() {
-  isDark.value = !isDark.value;
-  document.documentElement.classList.toggle("dark", isDark.value);
-  localStorage.setItem("theme", isDark.value ? "dark" : "light");
+function applyTheme(theme: string) {
+  const dark =
+    theme === "dark" ||
+    (theme === "system" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", dark);
+  isDark.value = dark;
+}
+
+async function initTheme() {
+  let theme = "system";
+  try {
+    theme = (await invoke<string>("get_theme")) || "system";
+  } catch {
+    /* ignore */
+  }
+  // 마이그레이션: settings 가 기본(system)인데 과거 localStorage 선택이 있으면 1회 이전
+  if (theme === "system") {
+    const legacy = localStorage.getItem("theme");
+    if (legacy === "light" || legacy === "dark") {
+      theme = legacy;
+      try {
+        await invoke("set_theme", { theme });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  applyTheme(theme);
+}
+
+async function toggleTheme() {
+  const next = isDark.value ? "light" : "dark";
+  applyTheme(next);
+  localStorage.setItem("theme", next);
+  try {
+    await invoke("set_theme", { theme: next });
+  } catch {
+    /* ignore */
+  }
 }
 
 const config = ref<HookConfig>({
@@ -102,6 +138,8 @@ function normalizePath(p: string): string {
 }
 
 onMounted(async () => {
+  await initTheme();
+
   // Check URL hash for initial tab
   const hash = window.location.hash.slice(1);
   if (hash && ["general", "hooks", "remote", "howto", "about"].includes(hash)) {

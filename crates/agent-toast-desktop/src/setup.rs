@@ -82,6 +82,9 @@ pub struct HookConfig {
     /// 원격 알림 UI 에 호스트명 표시 여부 (기본 true)
     #[serde(default = "default_show_hostname")]
     pub show_hostname: bool,
+    /// UI 테마: "system" | "light" | "dark" (기본 system = OS 설정 추종)
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_title_display_mode() -> String {
@@ -122,6 +125,10 @@ fn default_http_port() -> u16 {
 
 fn default_show_hostname() -> bool {
     true
+}
+
+fn default_theme() -> String {
+    "system".into()
 }
 
 fn default_locale() -> String {
@@ -278,6 +285,7 @@ impl Default for HookConfig {
             auto_start: true,
             codex_enabled: false,
             version: String::new(),
+            theme: default_theme(),
         }
     }
 }
@@ -1023,6 +1031,54 @@ pub fn read_locale() -> String {
         .as_str()
         .unwrap_or(&fallback)
         .to_string()
+}
+
+/// settings.json 문자열에서 agent_toast.theme 추출 — 실패/누락 시 "system".
+fn read_theme_from_json(content: &str) -> String {
+    serde_json::from_str::<Value>(content)
+        .ok()
+        .and_then(|root| root["agent_toast"]["theme"].as_str().map(str::to_string))
+        .unwrap_or_else(default_theme)
+}
+
+/// settings.json 문자열에 agent_toast.theme 을 설정하고 나머지 키는 보존하여 반환.
+fn set_theme_in_json(content: &str, theme: &str) -> String {
+    let mut root: Value =
+        serde_json::from_str(content).unwrap_or_else(|_| Value::Object(Default::default()));
+    if !root.is_object() {
+        root = Value::Object(Default::default());
+    }
+    let obj = root.as_object_mut().unwrap();
+    let at = obj
+        .entry("agent_toast")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !at.is_object() {
+        *at = Value::Object(Default::default());
+    }
+    at.as_object_mut()
+        .unwrap()
+        .insert("theme".into(), Value::String(theme.to_string()));
+    serde_json::to_string_pretty(&root).unwrap_or_else(|_| content.to_string())
+}
+
+/// settings.json 에서 theme 읽기 — 실패 시 "system".
+pub fn read_theme() -> String {
+    let path = settings_path();
+    match std::fs::read_to_string(&path) {
+        Ok(content) => read_theme_from_json(&content),
+        Err(_) => default_theme(),
+    }
+}
+
+/// settings.json 의 theme 만 갱신(다른 키/훅 보존). 파일 없으면 새로 생성.
+pub fn write_theme(theme: &str) -> Result<(), String> {
+    let path = settings_path();
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let updated = set_theme_in_json(&content, theme);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&path, updated).map_err(|e| e.to_string())
 }
 
 fn codex_config_path() -> PathBuf {
@@ -2391,5 +2447,44 @@ mod tests {
             Some("keep-me"),
             "미지의 키는 보존되어야 함",
         );
+    }
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+
+    #[test]
+    fn read_theme_from_json_returns_stored_value() {
+        let json = r#"{"agent_toast":{"theme":"light"}}"#;
+        assert_eq!(read_theme_from_json(json), "light");
+    }
+
+    #[test]
+    fn read_theme_from_json_defaults_to_system_when_missing() {
+        let json = r#"{"agent_toast":{"locale":"ko"}}"#;
+        assert_eq!(read_theme_from_json(json), "system");
+    }
+
+    #[test]
+    fn read_theme_from_json_defaults_to_system_when_invalid() {
+        assert_eq!(read_theme_from_json("not json"), "system");
+    }
+
+    #[test]
+    fn set_theme_in_json_sets_value_and_preserves_other_keys() {
+        let json = r#"{"agent_toast":{"locale":"ko"},"otherTool":{"x":1}}"#;
+        let out = set_theme_in_json(json, "dark");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["agent_toast"]["theme"], "dark");
+        assert_eq!(v["agent_toast"]["locale"], "ko");
+        assert_eq!(v["otherTool"]["x"], 1);
+    }
+
+    #[test]
+    fn set_theme_in_json_creates_structure_when_empty() {
+        let out = set_theme_in_json("", "light");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["agent_toast"]["theme"], "light");
     }
 }
