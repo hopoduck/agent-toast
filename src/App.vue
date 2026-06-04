@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { Check, ChevronRight, Circle, Pencil, X } from "lucide-vue-next";
+import MarkdownIt from "markdown-it";
 import { computed, onMounted, ref, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import claudeLogo from "./assets/claude.svg";
@@ -70,6 +71,18 @@ const hostnameLabel = computed(() =>
 );
 const truncate = (s: string | null | undefined, n = 500) =>
   !s ? s : s.length > n ? s.slice(0, n) + "…" : s;
+
+// zero 프리셋: 모든 규칙 꺼진 상태에서 인라인 강조만 활성화 — 나머지 문법은 원문 그대로
+const md = new MarkdownIt("zero", { html: false }).enable([
+  "emphasis",
+  "backticks",
+  "strikethrough",
+]);
+
+const messageHtml = computed(() => {
+  const message = truncate(notification.value?.message);
+  return message ? md.renderInline(message) : null;
+});
 
 const eventType = computed<EventType>(() => {
   if (!notification.value) return "default";
@@ -374,12 +387,12 @@ async function onClose() {
             @ {{ truncate(hostnameLabel) }}
           </span>
         </div>
+        <!-- messageHtml은 markdown-it(zero, html:false)이 이스케이프한 인라인 강조 결과 -->
         <div
-          v-if="notification.message"
-          class="text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug"
-        >
-          {{ truncate(notification.message) }}
-        </div>
+          v-if="messageHtml"
+          class="text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug [&_strong]:font-semibold [&_strong]:text-toast-fg [&_code]:font-mono [&_code]:text-[11px] [&_code]:rounded [&_code]:px-1 [&_code]:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)]"
+          v-html="messageHtml"
+        />
       </div>
 
       <!-- Actions -->
