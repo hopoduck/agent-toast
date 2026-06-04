@@ -48,11 +48,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --font-sans: Montserrat, sans-serif;
-  --font-mono:
-    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
-    monospace;
-  --font-serif: Merriweather, serif;
   --radius: 0.625rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
@@ -90,6 +85,15 @@
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
   --color-destructive-foreground: var(--destructive-foreground);
+}
+
+/* 폰트는 테마(라이트/다크) 무관 — 일반 @theme으로 :root 변수와 유틸리티를 함께 생성 */
+@theme {
+  --font-sans:
+    "Pretendard Variable", Pretendard, -apple-system, sans-serif;
+  --font-mono:
+    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
+    monospace;
 }
 
 :root {
@@ -164,11 +168,6 @@
   --sidebar-accent-foreground: oklch(0.3353 0.0132 2.7676);
   --sidebar-border: oklch(0.9296 0.037 38.6868);
   --sidebar-ring: oklch(0.7357 0.1641 34.7091);
-  --font-sans: Montserrat, sans-serif;
-  --font-serif: Merriweather, serif;
-  --font-mono:
-    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
-    monospace;
   --shadow-color: hsl(0 0% 0%);
   --shadow-opacity: 0.09;
   --shadow-blur: 12px;
@@ -254,11 +253,6 @@
   --sidebar-accent-foreground: oklch(0.2569 0.0169 352.4042);
   --sidebar-border: oklch(0.3637 0.0203 342.2664);
   --sidebar-ring: oklch(0.7357 0.1641 34.7091);
-  --font-sans: Montserrat, sans-serif;
-  --font-serif: Merriweather, serif;
-  --font-mono:
-    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
-    monospace;
   --shadow-color: hsl(0 0% 0%);
   --shadow-opacity: 0.09;
   --shadow-blur: 12px;
@@ -286,11 +280,7 @@ html,
 body {
   background: transparent;
   overflow: hidden;
-  font-family:
-    "Pretendard Variable",
-    "Pretendard",
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Scrollbar */
