@@ -10,8 +10,34 @@
   --color-overlay-bg: oklch(0.18 0.005 280 / 0.6);
   --color-overlay-subtle: oklch(0.95 0 0 / 0.05);
   --color-overlay-border: oklch(0.95 0 0 / 0.2);
+  /* Toast glass surface (dark theme) — mirrors App.vue's .dark toast tokens.
+     Utilities: from-toast-surface-from / to-toast-surface-to / text-toast-fg /
+     text-toast-fg-dim / border-toast-border. Raw vars live in :root below. */
+  --color-toast-surface-from: var(--toast-surface-from);
+  --color-toast-surface-to: var(--toast-surface-to);
+  --color-toast-border: var(--toast-border);
+  --color-toast-fg: var(--toast-fg);
+  --color-toast-fg-dim: var(--toast-fg-dim);
   /* Default sans for the whole video. The terminal uses its own monospace. */
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+/* Raw design tokens consumed directly via var() in FakeToast inline styles
+   (glow / ring / highlight / shadow / accent). Dark-theme values copied
+   verbatim from src/global.css `.dark`, since the video background is dark. */
+:root {
+  --event-success: oklch(0.765 0.17 162);
+  --event-success-deep: oklch(0.7 0.17 162);
+  --toast-surface-from: oklch(0.27 0.012 280 / 0.8);
+  --toast-surface-to: oklch(0.17 0.012 280 / 0.72);
+  --toast-border: oklch(1 0 0 / 0.05);
+  --toast-highlight: oklch(1 0 0 / 0.1);
+  --toast-fg: oklch(0.95 0.01 280);
+  --toast-fg-dim: oklch(0.95 0.01 280 / 0.78);
+  --toast-text-shadow: 0 0 3px oklch(0 0 0 / 0.8), 0 1px 4px oklch(0 0 0 / 0.6);
+  --toast-glow: 22%;
+  --toast-ring: 8%;
+  --toast-shadow: 0 14px 32px -10px oklch(0 0 0 / 0.6);
 }
 
 /* Pretendard as the base body font so components without explicit font-family inherit it. */

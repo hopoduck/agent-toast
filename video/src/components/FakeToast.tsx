@@ -20,12 +20,14 @@ const styles = {
   accent: "bg-gradient-to-b from-event-success to-event-success-deep",
   icon: "bg-event-success/20 text-event-success",
   label: "text-event-success",
-  // App.vue: bg-event-success/20 text-event-success border-event-success/40 hover:bg-event-success/30
-  // 영상에선 hover pseudo 못 쓰니 base + bg 분리. base 는 항상 적용.
-  viewBtnBase: "text-event-success border-event-success/40",
-  viewBtnBg: "bg-event-success/20",
-  viewBtnBgHover: "bg-event-success/30",
+  // App.vue success viewBtn: bg-event-success text-zinc-950 border-transparent hover:bg-event-success-deep
+  // 솔리드 채움 버튼. hover pseudo 못 쓰니 bg 만 분리, 글자/테두리는 항상 적용.
+  viewBtnBase: "text-zinc-950 border-transparent",
+  viewBtnBg: "bg-event-success",
+  viewBtnBgHover: "bg-event-success-deep",
   dismissBar: "bg-event-success/30",
+  // App.vue: :style="{ '--toast-accent': styles.accentVar }" — 코너 글로우/링 색
+  accentVar: "var(--event-success)",
 };
 
 export const FakeToast: React.FC<Props> = ({
@@ -36,20 +38,33 @@ export const FakeToast: React.FC<Props> = ({
   hovered = false,
 }) => {
   return (
-    // App.vue: h-screen flex rounded-xl overflow-hidden bg-overlay-bg select-none
+    // App.vue: relative h-screen flex rounded-xl overflow-hidden select-none
+    //          bg-gradient-to-b from-toast-surface-from to-toast-surface-to shadow-[var(--toast-shadow)]
     // (transition/opacity 제거 — Remotion 이 외부에서 slide-in 제어)
     <div
       className={
-        "w-[380px] h-[140px] flex rounded-xl overflow-hidden bg-overlay-bg select-none " +
-        "shadow-[0_20px_50px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.08)] " +
-        "font-sans"
+        "relative w-[380px] h-[140px] flex rounded-xl overflow-hidden select-none " +
+        "bg-gradient-to-b from-toast-surface-from to-toast-surface-to " +
+        "shadow-[var(--toast-shadow)] font-sans"
       }
+      style={{ ["--toast-accent" as string]: styles.accentVar }}
     >
-      {/* Accent bar — App.vue: w-1 shrink-0 + styles.accent */}
-      <div className={"w-1 shrink-0 " + styles.accent} />
+      {/* Event-color corner glow + edge ring — App.vue 의 z-0 레이어 그대로 */}
+      <div
+        className="pointer-events-none absolute inset-0 rounded-xl z-0"
+        style={{
+          background:
+            "radial-gradient(150px 80px at 0% 0%, color-mix(in oklch, var(--toast-accent) var(--toast-glow), transparent), transparent 72%)",
+          boxShadow:
+            "inset 0 0 0 1px color-mix(in oklch, var(--toast-accent) var(--toast-ring), transparent), inset 0 1px 0 0 var(--toast-highlight)",
+        }}
+      />
 
-      {/* Content — App.vue: relative flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-lg */}
-      <div className="relative flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-lg">
+      {/* Accent bar — App.vue: relative z-10 w-1 shrink-0 + styles.accent */}
+      <div className={"relative z-10 w-1 shrink-0 " + styles.accent} />
+
+      {/* Content — App.vue: relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-[var(--toast-text-shadow)] */}
+      <div className="relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-[var(--toast-text-shadow)]">
         {/* Dismiss progress — App.vue 의 absolute bottom-0 h-[3px] bg-overlay-subtle */}
         <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-overlay-subtle">
           <div
@@ -58,8 +73,8 @@ export const FakeToast: React.FC<Props> = ({
           />
         </div>
 
-        {/* Header — App.vue: flex items-center justify-between */}
-        <div className="flex items-center justify-between">
+        {/* Header — App.vue: flex items-center justify-between text-shadow-none */}
+        <div className="flex items-center justify-between text-shadow-none">
           <div className="flex items-center gap-1.5">
             {/* Event icon — size-5 rounded-md + styles.icon */}
             <span
@@ -76,19 +91,20 @@ export const FakeToast: React.FC<Props> = ({
               src={staticFile("claude.svg")}
               alt=""
             />
-            {/* Event label — text-[13px] font-semibold tracking-wide + styles.label */}
+            {/* Event label — text-[13px] font-semibold tracking-wide + accent text-shadow glow + styles.label */}
             <span
               className={
-                "text-[13px] font-semibold tracking-wide " + styles.label
+                "text-[13px] font-semibold tracking-wide text-shadow-[0_0_8px_color-mix(in_oklch,var(--toast-accent)_55%,transparent)] " +
+                styles.label
               }
             >
               {eventLabel}
             </span>
           </div>
-          {/* Close X — size-6 rounded-md text-white/50 */}
+          {/* Close X — App.vue: size-6 rounded-md text-toast-fg-dim */}
           <button
             type="button"
-            className="size-6 flex items-center justify-center rounded-md text-white/50"
+            className="size-6 flex items-center justify-center rounded-md text-toast-fg-dim"
           >
             <X size={14} />
           </button>
@@ -96,13 +112,13 @@ export const FakeToast: React.FC<Props> = ({
 
         {/* Body — App.vue: flex flex-col gap-0.5 min-w-0 */}
         <div className="flex flex-col gap-0.5 min-w-0">
-          {/* window_title — text-[14px] font-medium text-white/90 truncate leading-snug */}
-          <div className="text-[14px] font-medium text-white/90 truncate leading-snug">
+          {/* window_title — App.vue: text-[14px] font-bold text-toast-fg truncate leading-snug */}
+          <div className="text-[14px] font-bold text-toast-fg truncate leading-snug">
             {windowTitle}
           </div>
-          {/* message (optional) — text-xs text-white/60 truncate leading-snug */}
+          {/* message (optional) — App.vue: text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug */}
           {message && (
-            <div className="text-xs text-white/60 truncate leading-snug">
+            <div className="text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug">
               {message}
             </div>
           )}
@@ -110,11 +126,11 @@ export const FakeToast: React.FC<Props> = ({
 
         {/* Actions — App.vue: flex gap-1.5 */}
         <div className="flex gap-1.5">
-          {/* View button — flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-medium rounded-md border + styles.viewBtn */}
+          {/* View button — App.vue: flex-1 ... py-1.5 text-[13px] font-semibold rounded-md border + styles.viewBtn (솔리드) */}
           <button
             type="button"
             className={
-              "flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-medium rounded-md border " +
+              "flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-semibold rounded-md border " +
               styles.viewBtnBase + " " +
               (hovered ? styles.viewBtnBgHover : styles.viewBtnBg)
             }
@@ -122,10 +138,11 @@ export const FakeToast: React.FC<Props> = ({
             <ChevronRight size={14} />
             보기
           </button>
-          {/* Close button — flex-1 py-1.5 text-[13px] font-medium rounded-md bg-white/15 text-white/80 border border-white/20 */}
+          {/* Close button — App.vue: flex-1 py-1.5 text-[13px] font-medium rounded-md
+              bg-[toast-fg 7%] text-toast-fg border border-toast-border */}
           <button
             type="button"
-            className="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-white/15 text-white/80 border border-white/20"
+            className="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-[color-mix(in_oklch,var(--toast-fg)_7%,transparent)] text-toast-fg border border-toast-border"
           >
             닫기
           </button>

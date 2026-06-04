@@ -1,8 +1,10 @@
-import { AbsoluteFill, useCurrentFrame, interpolate, staticFile } from "remotion";
+import React from "react";
+import { AbsoluteFill, useCurrentFrame, interpolate, staticFile, spring, useVideoConfig } from "remotion";
 import { FakeTerminal, type TerminalLine } from "../components/FakeTerminal";
-import { FakeNoteApp } from "../components/FakeNoteApp";
-
-const FULL_BODY = "이번 주에 정리할 내용\n\n- 리팩토링 결과 검토\n- 다음 스프린트 계획\n- 회의 일정 조율";
+import { Stage } from "../components/Stage";
+import { Reveal } from "../components/Reveal";
+import { useFrameScaler, useReveal } from "../timing";
+import { fraunces } from "../fonts";
 
 const FULL_REPORT_LINES: { text: string; color?: string }[] = [
   // 응답 시작 (Scene1/2/3 와 연결되는 사전 작업 요약)
@@ -68,84 +70,113 @@ const BASE_LINES: TerminalLine[] = [
 
 export const Scene4Return: React.FC = () => {
   const frame = useCurrentFrame();
+  const f = useFrameScaler();
 
-  // Phase 1 (0-72): note app fades out, terminal un-dims
-  const noteOpacity = interpolate(frame, [0, 72], [1, 0], { extrapolateRight: "clamp" });
-  const noteScale = interpolate(frame, [0, 72], [1, 0.96], { extrapolateRight: "clamp" });
-  const terminalDim = frame < 72;
+  // 리포트를 빠르게 좌르륵 출력 — 작업 로그가 흘러 완료되는 연출("이만큼 쭉 했구나").
+  // FakeTerminal 이 bottom-anchored 라 줄이 쌓이며 자연히 위로 스크롤된다.
+  const shownReport = Math.floor(
+    interpolate(frame, [f(16), f(150)], [0, FULL_REPORT_LINES.length], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    }),
+  );
+  const lines: TerminalLine[] = [...BASE_LINES, ...FULL_REPORT_LINES.slice(0, shownReport)];
 
-  // Full report — shown immediately (no progressive reveal)
-  const lines: TerminalLine[] = [...BASE_LINES, ...FULL_REPORT_LINES];
+  // 진입 줌인 — 클릭으로 터미널이 "열리는" 인과를 준다.
+  const terminalScale = interpolate(frame, [0, f(48)], [0.965, 1], { extrapolateRight: "clamp" });
 
-  // Phase 3: logo + tagline fade in, terminal fades out
-  const endingOpacity = interpolate(frame, [320, 400], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const endingScale = interpolate(frame, [320, 440], [0.95, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   // 종료값 0 으로 — 잔상이 남으면 로고 위에 어두운 패치가 보임
-  const terminalFadeOut = interpolate(frame, [280, 380], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const terminalFadeOut = interpolate(frame, [f(280), f(380)], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+
+  // 엔딩에서 앰비언트 글로우를 한 단계 더 끌어올려 워드마크를 따뜻하게 감쌈
+  const endingGlow = interpolate(frame, [f(300), f(400)], [1, 1.5], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+
+  // Phase 3 엔딩 — 로고 팝(spring) + 줄별 키네틱 reveal(마스크 아래→위 슬라이드업).
+  const { fps } = useVideoConfig();
+  const logoPop = spring({ frame: frame - f(298), fps, config: { damping: 12, stiffness: 170, mass: 0.6 } });
+  const rv = useReveal();
+  const revLine1 = rv(316);
+  const revLine2 = rv(330);
+  const revTagline = rv(354, 38);
 
   return (
-    <AbsoluteFill style={{ background: "#0f0f10" }}>
-      {/* Terminal — comes forward */}
-      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: terminalFadeOut }}>
-        <FakeTerminal title="claude" lines={lines} dimmed={terminalDim} />
+    <Stage glow={endingGlow}>
+      {/* Terminal — 리포트. 크로스페이드로 Scene3 노트앱에서 넘어오며 줌인 + 좌르륵 출력 */}
+      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: terminalFadeOut, transform: `scale(${terminalScale})` }}>
+        <FakeTerminal title="claude" lines={lines} />
       </AbsoluteFill>
 
-      {/* Note app fading out */}
-      {noteOpacity > 0.01 && (
-        <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: noteOpacity, transform: `scale(${noteScale})` }}>
-          <FakeNoteApp
-            notes={[
-              { title: "주간 정리", active: true },
-              { title: "회의록 — 03/12" },
-              { title: "아이디어 노트" },
-              { title: "독서 메모" },
-            ]}
-            title="주간 정리"
-            body={FULL_BODY}
+      {/* 우측 큰 로고 — 팝(spring) + 앰버 글로우 헤일로(좌 워드마크와 비대칭 균형) */}
+      <AbsoluteFill style={{ alignItems: "flex-end", justifyContent: "center", paddingRight: 130 }}>
+        <div
+          style={{
+            position: "relative",
+            transform: `scale(${logoPop})`,
+            opacity: Math.min(1, logoPop * 1.6),
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: -54,
+              borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(255,138,60,0.42), transparent 66%)",
+              filter: "blur(28px)",
+            }}
           />
-        </AbsoluteFill>
-      )}
-
-      {/* Ending — logo + tagline */}
-      <AbsoluteFill
-        style={{
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: endingOpacity,
-          transform: `scale(${endingScale})`,
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
-          {/* Simple wordmark — actual logo image not loaded here, use text */}
-          <div
+          <img
+            src={staticFile("logo.png")}
+            alt=""
             style={{
-              fontSize: 80,
-              fontWeight: 800,
-              color: "#ffffff",
-              letterSpacing: -1,
-              display: "flex",
-              alignItems: "center",
-              gap: 22,
+              position: "relative",
+              width: 224,
+              height: 224,
+              objectFit: "contain",
+              filter: "drop-shadow(0 12px 30px rgba(0,0,0,0.55))",
             }}
-          >
-            <img
-              src={staticFile("logo.png")}
-              alt=""
-              style={{ width: 90, height: 90, objectFit: "contain" }}
-            />
-            agent-toast
-          </div>
-          <div
-            style={{
-              fontSize: 28,
-              color: "rgba(255,255,255,0.7)",
-              letterSpacing: 0.5,
-            }}
-          >
-            기다리지 마세요
-          </div>
+          />
         </div>
       </AbsoluteFill>
-    </AbsoluteFill>
+
+      {/* Ending — 좌측 워드마크 + 태그라인(에디토리얼 비대칭) */}
+      <AbsoluteFill style={{ justifyContent: "center", paddingLeft: 132 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 30 }}>
+          {/* 거대 워드마크 — Fraunces 900, 두 줄 세로 스택 */}
+          <div
+            style={{
+              fontFamily: fraunces,
+              fontWeight: 900,
+              fontSize: 168,
+              lineHeight: 0.92,
+              letterSpacing: -5,
+              color: "#F5F2EA",
+            }}
+          >
+            <Reveal y={revLine1.y} opacity={revLine1.opacity}>
+              Agent
+            </Reveal>
+            <Reveal y={revLine2.y} opacity={revLine2.opacity}>
+              Toast<span style={{ color: "#FF8A3C" }}>.</span>
+            </Reveal>
+          </div>
+
+          {/* 태그라인 */}
+          <Reveal
+            y={revTagline.y}
+            opacity={revTagline.opacity}
+            style={{
+              marginLeft: 6,
+              fontFamily: "var(--font-sans)",
+              fontSize: 25,
+              fontWeight: 500,
+              letterSpacing: 8,
+              color: "rgba(245,242,234,0.6)",
+            }}
+          >
+            정확한 순간에 돌아오세요
+          </Reveal>
+        </div>
+      </AbsoluteFill>
+    </Stage>
   );
 };
