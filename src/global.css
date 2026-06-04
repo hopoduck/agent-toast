@@ -49,7 +49,9 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --font-sans: Montserrat, sans-serif;
-  --font-mono: Ubuntu Mono, monospace;
+  --font-mono:
+    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
+    monospace;
   --font-serif: Merriweather, serif;
   --radius: 0.625rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
@@ -164,7 +166,9 @@
   --sidebar-ring: oklch(0.7357 0.1641 34.7091);
   --font-sans: Montserrat, sans-serif;
   --font-serif: Merriweather, serif;
-  --font-mono: Ubuntu Mono, monospace;
+  --font-mono:
+    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
+    monospace;
   --shadow-color: hsl(0 0% 0%);
   --shadow-opacity: 0.09;
   --shadow-blur: 12px;
@@ -252,7 +256,9 @@
   --sidebar-ring: oklch(0.7357 0.1641 34.7091);
   --font-sans: Montserrat, sans-serif;
   --font-serif: Merriweather, serif;
-  --font-mono: Ubuntu Mono, monospace;
+  --font-mono:
+    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
+    monospace;
   --shadow-color: hsl(0 0% 0%);
   --shadow-opacity: 0.09;
   --shadow-blur: 12px;
