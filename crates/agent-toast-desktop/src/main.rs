@@ -96,12 +96,10 @@ fn main() {
         let event = codex_type.replace('-', "_");
 
         let message = codex_payload["last-assistant-message"].as_str().map(|s| {
-            // Truncate long messages for notification display
-            if s.len() > 200 {
-                format!("{}...", &s[..200])
-            } else {
-                s.to_string()
-            }
+            agent_toast_core::dynamic::truncate_chars(
+                s,
+                agent_toast_core::dynamic::MAX_MESSAGE_CHARS,
+            )
         });
 
         let title_hint = codex_payload["cwd"].as_str().map(|cwd| {
@@ -236,6 +234,14 @@ fn main() {
         .event
         .expect("--event is required when not using --daemon");
 
+    // With --dynamic, derive the body from the hook's stdin JSON; otherwise use
+    // the static --message as-is.
+    let message = if args.dynamic {
+        agent_toast_core::dynamic::resolve_from_stdin(args.message.as_deref())
+    } else {
+        args.message
+    };
+
     // Pre-resolve process tree while the process is still alive
     let process_tree = win32::get_process_tree(pid);
 
@@ -254,7 +260,7 @@ fn main() {
     let request = NotifyRequest {
         pid,
         event,
-        message: args.message,
+        message,
         title_hint,
         process_tree: Some(process_tree),
         source: "claude".into(),

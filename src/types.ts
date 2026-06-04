@@ -54,6 +54,7 @@ export interface HookConfig {
   http_enabled: boolean;
   http_port: number;
   show_hostname: boolean;
+  dynamic_message_enabled: boolean;
 }
 
 export interface MonitorInfo {

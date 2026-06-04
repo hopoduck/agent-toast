@@ -376,7 +376,7 @@ async function onClose() {
         </div>
         <div
           v-if="notification.message"
-          class="text-xs text-toast-fg-dim truncate leading-snug"
+          class="text-xs text-toast-fg-dim line-clamp-2 leading-snug"
         >
           {{ truncate(notification.message) }}
         </div>

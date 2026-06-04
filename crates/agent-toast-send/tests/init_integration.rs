@@ -82,3 +82,35 @@ fn uninstall_removes_only_agent_toast_entries() {
     );
     assert!(content.contains("/usr/bin/custom"), "커스텀 훅 보존");
 }
+
+#[test]
+fn init_dynamic_adds_dynamic_flag_to_commands() {
+    let tmp = tempfile::tempdir().unwrap();
+    let status = run_with_home(
+        tmp.path(),
+        &["init", "--url", "http://desktop:8787", "--dynamic"],
+    );
+    assert!(status.success());
+
+    let content = fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let stop_cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    assert!(
+        stop_cmd.contains("--dynamic"),
+        "init --dynamic 시 등록 커맨드에 --dynamic 포함되어야 함"
+    );
+}
+
+#[test]
+fn init_without_dynamic_has_no_flag() {
+    let tmp = tempfile::tempdir().unwrap();
+    run_with_home(tmp.path(), &["init", "--url", "http://desktop:8787"]);
+
+    let content = fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
+    assert!(
+        !content.contains("--dynamic"),
+        "--dynamic 없이 init 하면 플래그가 없어야 함"
+    );
+}

@@ -167,6 +167,15 @@ onMounted(async () => {
         <span class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/50">동작</span>
       </div>
       <div class="rounded-[12px] border border-border overflow-hidden divide-y divide-border">
+        <!-- Dynamic message -->
+        <div class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100">
+          <div class="flex flex-col gap-0.5 min-w-0 pr-2">
+            <span class="text-sm font-medium text-foreground">{{ t("general.dynamic_message") }}</span>
+            <span class="text-[11px] text-muted-foreground leading-tight">{{ t("general.dynamic_message_desc") }}</span>
+          </div>
+          <Switch v-model="config.dynamic_message_enabled" class="shrink-0" />
+        </div>
+
         <!-- Auto dismiss -->
         <div class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100">
           <div class="flex flex-col gap-0.5">

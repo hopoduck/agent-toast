@@ -20,6 +20,11 @@ pub struct Cli {
     #[arg(long)]
     pub message: Option<String>,
 
+    /// Derive the notification body from the hook's stdin JSON (last agent
+    /// message / tool description), falling back to --message on failure.
+    #[arg(long)]
+    pub dynamic: bool,
+
     /// Window title hint for matching the correct source window
     #[arg(long)]
     pub title: Option<String>,
@@ -202,5 +207,18 @@ mod tests {
     fn cli_parse_zero_pid() {
         let cli = Cli::try_parse_from(["agent-toast", "--pid", "0"]).unwrap();
         assert_eq!(cli.pid, Some(0));
+    }
+
+    #[test]
+    fn cli_parse_dynamic_flag() {
+        let cli =
+            Cli::try_parse_from(["agent-toast", "--event", "task_complete", "--dynamic"]).unwrap();
+        assert!(cli.dynamic);
+    }
+
+    #[test]
+    fn cli_dynamic_defaults_false() {
+        let cli = Cli::try_parse_from(["agent-toast", "--event", "task_complete"]).unwrap();
+        assert!(!cli.dynamic);
     }
 }

@@ -85,6 +85,11 @@ pub struct HookConfig {
     /// UI 테마: "system" | "light" | "dark" (기본 system = OS 설정 추종)
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// 알림 본문에 에이전트의 마지막 메시지(또는 도구 설명)를 동적으로 사용 (기본 false).
+    /// 켜지면 모든 알림 훅 커맨드에 `--dynamic` 이 붙고, 입력칸 문구는 추출 실패 시
+    /// fallback 으로 동작한다.
+    #[serde(default)]
+    pub dynamic_message_enabled: bool,
 }
 
 fn default_title_display_mode() -> String {
@@ -286,6 +291,7 @@ impl Default for HookConfig {
             codex_enabled: false,
             version: String::new(),
             theme: default_theme(),
+            dynamic_message_enabled: false,
         }
     }
 }
@@ -390,6 +396,9 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         show_hostname: root["agent_toast"]["show_hostname"]
             .as_bool()
             .unwrap_or_else(default_show_hostname),
+        dynamic_message_enabled: root["agent_toast"]["dynamic_message_enabled"]
+            .as_bool()
+            .unwrap_or(false),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
     };
@@ -657,10 +666,29 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert("http_port".into(), Value::Number(config.http_port.into()));
     cn.insert("show_hostname".into(), Value::Bool(config.show_hostname));
     cn.insert(
+        "dynamic_message_enabled".into(),
+        Value::Bool(config.dynamic_message_enabled),
+    );
+    cn.insert(
         "version".into(),
         Value::String(env!("CARGO_PKG_VERSION").to_string()),
     );
     root["agent_toast"] = Value::Object(cn);
+}
+
+/// Append ` --dynamic` to every notification hook command when dynamic mode is
+/// enabled, leaving the infrastructure `--daemon` entry untouched (it carries no
+/// message). With `--dynamic` the CLI derives the toast body from the hook's
+/// stdin JSON instead of the static `--message`.
+fn apply_dynamic_flag(entries: &mut [HookEntry], enabled: bool) {
+    if !enabled {
+        return;
+    }
+    for e in entries.iter_mut() {
+        if !e.command.contains("--daemon") {
+            e.command.push_str(" --dynamic");
+        }
+    }
 }
 
 /// Save hook config to ~/.claude/settings.json, preserving other fields
@@ -860,6 +888,10 @@ pub fn save_hook_config(
             ),
         });
     }
+
+    // When dynamic mode is on, every notification command derives its body from
+    // the hook's stdin JSON (the infrastructure `--daemon` entry stays untouched).
+    apply_dynamic_flag(&mut entries, config.dynamic_message_enabled);
 
     // Merge entries into root, preserving non-agent-toast hooks.
     root = merge_agent_toast_hooks(root, &entries);
@@ -2486,5 +2518,54 @@ mod theme_tests {
         let out = set_theme_in_json("", "light");
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["agent_toast"]["theme"], "light");
+    }
+
+    #[test]
+    fn parse_reads_dynamic_message_enabled() {
+        let json = r#"{"agent_toast":{"dynamic_message_enabled":true}}"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(config.dynamic_message_enabled);
+    }
+
+    #[test]
+    fn parse_dynamic_message_defaults_false_when_absent() {
+        let config = parse_hook_config_from_json("{}");
+        assert!(!config.dynamic_message_enabled);
+    }
+
+    #[test]
+    fn apply_dynamic_flag_targets_notification_commands_only() {
+        let mut entries = vec![
+            HookEntry {
+                event_key: "SessionStart",
+                matcher: None,
+                command: "\"at.exe\" --daemon".into(),
+            },
+            HookEntry {
+                event_key: "Stop",
+                matcher: None,
+                command: "\"at.exe\" --event task_complete --message \"x\"".into(),
+            },
+        ];
+        apply_dynamic_flag(&mut entries, true);
+        assert_eq!(
+            entries[0].command, "\"at.exe\" --daemon",
+            "--daemon 엔트리는 무변경"
+        );
+        assert!(
+            entries[1].command.ends_with(" --dynamic"),
+            "알림 커맨드에 --dynamic 추가"
+        );
+    }
+
+    #[test]
+    fn apply_dynamic_flag_noop_when_disabled() {
+        let mut entries = vec![HookEntry {
+            event_key: "Stop",
+            matcher: None,
+            command: "\"at.exe\" --event task_complete".into(),
+        }];
+        apply_dynamic_flag(&mut entries, false);
+        assert!(!entries[0].command.contains("--dynamic"));
     }
 }

@@ -59,6 +59,8 @@
     "sound": "Notification Sound",
     "auto_start": "Auto-start on Session",
     "auto_start_desc": "Automatically launch app when a Claude Code session starts",
+    "dynamic_message": "Use Agent's Message",
+    "dynamic_message_desc": "Show the agent's last message (or the tool description on permission requests) as the notification body. Falls back to each hook's fixed text when unavailable.",
     "test_notification": "Show Test Notification",
     "language": "Language"
   },

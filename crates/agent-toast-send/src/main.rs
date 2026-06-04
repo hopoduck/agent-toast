@@ -42,6 +42,10 @@ struct SendArgs {
     title: Option<String>,
     #[arg(long)]
     hostname: Option<String>,
+    /// Derive the body from the hook's stdin JSON (last assistant message /
+    /// tool description), falling back to --message on failure.
+    #[arg(long)]
+    dynamic: bool,
     #[arg(long, default_value = "claude")]
     source: String,
     #[arg(long, default_value_t = 2000)]
@@ -56,6 +60,10 @@ struct InitArgs {
     url: String,
     #[arg(long)]
     hostname: Option<String>,
+    /// Register hooks with --dynamic so the body uses the agent's last message
+    /// (or tool description) instead of the fixed text.
+    #[arg(long)]
+    dynamic: bool,
 }
 
 fn main() {
@@ -121,7 +129,12 @@ fn run_send(args: SendArgs) -> i32 {
         return 2;
     }
 
-    let req = build_request(&args);
+    let mut req = build_request(&args);
+    // --dynamic: replace the static message with one derived from the hook's
+    // stdin JSON (shared logic with the desktop CLI via core).
+    if args.dynamic {
+        req.message = agent_toast_core::dynamic::resolve_from_stdin(args.message.as_deref());
+    }
     let body = match serde_json::to_vec(&req) {
         Ok(b) => b,
         Err(e) => {
@@ -209,17 +222,20 @@ fn run_init(args: InitArgs) -> i32 {
         _ => ("Task completed", "Permission requested"),
     };
 
+    let dyn_flag = if args.dynamic { " --dynamic" } else { "" };
     let stop_cmd = format!(
-        "agent-toast-send --url {} --event task_complete --message {}{}",
+        "agent-toast-send --url {} --event task_complete --message {}{}{}",
         url_esc,
         shell_escape::escape(stop_msg.into()),
         host_flag,
+        dyn_flag,
     );
     let input_cmd = format!(
-        "agent-toast-send --url {} --event user_input_required --message {}{}",
+        "agent-toast-send --url {} --event user_input_required --message {}{}{}",
         url_esc,
         shell_escape::escape(input_msg.into()),
         host_flag,
+        dyn_flag,
     );
 
     let entries = vec![
@@ -311,6 +327,7 @@ mod tests {
             source: "claude".into(),
             timeout_ms: 2000,
             quiet: false,
+            dynamic: false,
         };
         let req = build_request(&args);
         assert_eq!(req.event, "task_complete");

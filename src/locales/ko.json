@@ -59,6 +59,8 @@
     "sound": "알림 소리",
     "auto_start": "세션 시작 시 자동 실행",
     "auto_start_desc": "Claude Code 세션 시작 시 앱을 자동으로 실행합니다",
+    "dynamic_message": "에이전트 메시지 사용",
+    "dynamic_message_desc": "알림 내용을 에이전트의 마지막 메시지(권한 요청 시 도구 설명)로 표시합니다. 추출 실패 시 각 훅의 고정 문구를 사용합니다.",
     "test_notification": "테스트 알림 띄우기",
     "language": "언어 / Language"
   },
