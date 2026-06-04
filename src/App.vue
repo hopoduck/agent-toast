@@ -300,7 +300,7 @@ async function onClose() {
 
     <!-- Content -->
     <div
-      class="relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0"
+      class="relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-[var(--toast-text-shadow)]"
     >
       <!-- Dismiss progress -->
       <div
@@ -328,7 +328,7 @@ async function onClose() {
       </div>
 
       <!-- Header -->
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between text-shadow-none">
         <div class="flex items-center gap-1.5">
           <span
             class="size-5 rounded-md flex items-center justify-center"
@@ -342,7 +342,7 @@ async function onClose() {
             alt=""
           />
           <span
-            class="text-[13px] font-semibold tracking-wide"
+            class="text-[13px] font-semibold tracking-wide text-shadow-[0_0_8px_color-mix(in_oklch,var(--toast-accent)_55%,transparent)]"
             :class="styles.label"
             >{{ eventLabel }}</span
           >
@@ -364,7 +364,7 @@ async function onClose() {
       <!-- Body -->
       <div class="flex flex-col gap-0.5 min-w-0">
         <div
-          class="text-[14px] font-semibold text-toast-fg truncate leading-snug"
+          class="text-[14px] font-bold text-toast-fg truncate leading-snug"
         >
           {{ truncate(notification.window_title) }}
           <span
@@ -376,7 +376,7 @@ async function onClose() {
         </div>
         <div
           v-if="notification.message"
-          class="text-xs text-toast-fg-dim line-clamp-2 leading-snug"
+          class="text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug"
         >
           {{ truncate(notification.message) }}
         </div>

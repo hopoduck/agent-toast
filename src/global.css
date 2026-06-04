@@ -92,18 +92,18 @@
 
 :root {
   --radius: 0.625rem;
-  /* Event type colors */
-  --event-default: oklch(0.72 0.12 272);
+  /* Event type colors — light (darker than dark theme for contrast on bright surface) */
+  --event-default: oklch(0.6 0.19 272);
   --event-default-from: oklch(0.65 0.14 265);
   --event-default-to: oklch(0.55 0.2 285);
-  --event-success: oklch(0.765 0.17 162);
-  --event-success-deep: oklch(0.7 0.17 162);
-  --event-warning: oklch(0.55 0.19 55);
-  --event-warning-deep: oklch(0.48 0.19 55);
-  --event-error: oklch(0.7 0.19 22);
-  --event-error-deep: oklch(0.64 0.19 22);
-  --event-codex: oklch(0.765 0.17 150);
-  --event-codex-deep: oklch(0.7 0.17 150);
+  --event-success: oklch(0.63 0.17 162);
+  --event-success-deep: oklch(0.56 0.16 162);
+  --event-warning: oklch(0.63 0.2 55);
+  --event-warning-deep: oklch(0.56 0.19 55);
+  --event-error: oklch(0.62 0.23 22);
+  --event-error-deep: oklch(0.56 0.21 22);
+  --event-codex: oklch(0.63 0.19 150);
+  --event-codex-deep: oklch(0.56 0.18 150);
   --section-claude: oklch(0.73 0.11 46);
   --section-codex: oklch(0.15 0 0);
   /* Overlay (notification glass) */
@@ -111,12 +111,13 @@
   --overlay-border: oklch(1 0 0 / 0.08);
   --overlay-subtle: oklch(1 0 0 / 0.08);
   /* Toast surface — light (translucent glass, softened off-white) */
-  --toast-surface-from: oklch(0.965 0.006 280 / 0.88);
-  --toast-surface-to: oklch(0.925 0.008 280 / 0.8);
+  --toast-surface-from: oklch(0.965 0.006 280 / 0.8);
+  --toast-surface-to: oklch(0.925 0.008 280 / 0.72);
   --toast-border: oklch(0.2 0 0 / 0.06);
   --toast-highlight: oklch(1 0 0 / 0.8);
   --toast-fg: oklch(0.28 0.012 280);
-  --toast-fg-dim: oklch(0.28 0.012 280 / 0.8);
+  --toast-fg-dim: oklch(0.28 0.012 280 / 0.9);
+  --toast-text-shadow: 0 0 2px oklch(1 0 0 / 0.7), 0 1px 3px oklch(1 0 0 / 0.5);
   --toast-glow: 26%;
   --toast-ring: 18%;
   --toast-shadow: 0 14px 32px -12px oklch(0.2 0.02 280 / 0.28);
@@ -206,12 +207,13 @@
   --overlay-border: oklch(1 0 0 / 0.08);
   --overlay-subtle: oklch(1 0 0 / 0.08);
   /* Toast surface — dark (translucent glass) */
-  --toast-surface-from: oklch(0.27 0.012 280 / 0.82);
+  --toast-surface-from: oklch(0.27 0.012 280 / 0.8);
   --toast-surface-to: oklch(0.17 0.012 280 / 0.72);
   --toast-border: oklch(1 0 0 / 0.05);
   --toast-highlight: oklch(1 0 0 / 0.1);
   --toast-fg: oklch(0.95 0.01 280);
-  --toast-fg-dim: oklch(0.95 0.01 280 / 0.6);
+  --toast-fg-dim: oklch(0.95 0.01 280 / 0.78);
+  --toast-text-shadow: 0 0 3px oklch(0 0 0 / 0.8), 0 1px 4px oklch(0 0 0 / 0.6);
   --toast-glow: 22%;
   --toast-ring: 8%;
   --toast-shadow: 0 14px 32px -10px oklch(0 0 0 / 0.6);
