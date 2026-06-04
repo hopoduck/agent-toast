@@ -39,3 +39,8 @@ PRD.md
 
 # Superpowers brainstorm artifacts
 .superpowers/
+
+# Claude Code worktrees & planning artifacts
+.claude/worktrees/
+docs/
+*.local.*
