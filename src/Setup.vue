@@ -20,6 +20,7 @@ import { useI18n } from "vue-i18n";
 import { toast, Toaster } from "vue-sonner";
 import "vue-sonner/style.css";
 import AboutSettings from "./components/AboutSettings.vue";
+import DesignSettings from "./components/DesignSettings.vue";
 import GeneralSettings from "./components/GeneralSettings.vue";
 import HookSettings from "./components/HookSettings.vue";
 import HowtoSettings from "./components/HowtoSettings.vue";
@@ -118,6 +119,10 @@ const config = ref<HookConfig>({
   http_port: 38787,
   show_hostname: true,
   dynamic_message_enabled: true,
+  toast_bar: "left",
+  toast_border: "subtle",
+  toast_effects: [],
+  toast_body: "glow",
 });
 
 watch(
@@ -143,14 +148,20 @@ onMounted(async () => {
 
   // Check URL hash for initial tab
   const hash = window.location.hash.slice(1);
-  if (hash && ["general", "hooks", "remote", "howto", "about"].includes(hash)) {
+  if (
+    hash &&
+    ["general", "design", "hooks", "remote", "howto", "about"].includes(hash)
+  ) {
     activeTab.value = hash;
   }
 
   // Listen for hash changes (when window already exists)
   window.addEventListener("hashchange", () => {
     const h = window.location.hash.slice(1);
-    if (h && ["general", "hooks", "remote", "howto", "about"].includes(h)) {
+    if (
+      h &&
+      ["general", "design", "hooks", "remote", "howto", "about"].includes(h)
+    ) {
       activeTab.value = h;
     }
   });
@@ -254,6 +265,10 @@ function onReset() {
     http_port: 38787,
     show_hostname: true,
     dynamic_message_enabled: true,
+    toast_bar: "left",
+    toast_border: "subtle",
+    toast_effects: [],
+    toast_body: "glow",
   };
 }
 
@@ -362,6 +377,7 @@ async function onClose() {
           v-model="activeTab"
           :tabs="[
             { value: 'general', label: t('setup.tab_general') },
+            { value: 'design', label: t('setup.tab_design') },
             { value: 'hooks', label: t('setup.tab_hooks') },
             { value: 'remote', label: t('setup.tab_remote') },
             { value: 'howto', label: t('setup.tab_howto') },
@@ -375,29 +391,12 @@ async function onClose() {
             v-model="config"
             @test-notification="onTestNotification"
           />
+          <DesignSettings v-if="activeTab === 'design'" v-model="config" />
           <HookSettings v-if="activeTab === 'hooks'" v-model="config" />
           <RemoteSettings v-if="activeTab === 'remote'" v-model="config" />
           <HowtoSettings v-if="activeTab === 'howto'" />
           <AboutSettings v-if="activeTab === 'about'" />
         </div>
-      </div>
-
-      <!-- Exe info -->
-      <div
-        v-if="activeTab !== 'about' && activeTab !== 'howto'"
-        class="flex flex-col gap-1 p-3 bg-muted rounded-lg"
-      >
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground whitespace-nowrap">{{
-            t("setup.exe_label")
-          }}</span>
-          <code class="text-[11px] text-foreground/60 break-all">{{
-            exePath
-          }}</code>
-        </div>
-        <span class="text-[11px] text-muted-foreground">{{
-          t("setup.exe_hint")
-        }}</span>
       </div>
 
       <!-- Actions -->

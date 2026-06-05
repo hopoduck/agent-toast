@@ -326,6 +326,124 @@ body {
   }
 }
 
+/* ── Toast effects (디자인 설정 toast_effects, ToastCard.vue에서 사용) ── */
+
+/* ring: SVG 대시 꼬리가 테두리를 균등 속도로 순회.
+   경로 방향 그라데이션이 불가하므로 길이가 다른 대시 3겹을
+   머리 위치에 정렬(--tail-shift)해 혜성형 페이드를 만든다 */
+.toast-ring-tail {
+  width: calc(100% - 2.5px);
+  height: calc(100% - 2.5px);
+  fill: none;
+  stroke: var(--toast-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  --tail-shift: 0px;
+  /* 바퀴의 90%를 가속-감속으로 돌고(0→80%), 남은 10%는 짧게 기어간다.
+     베지어 양 끝 기울기(0.44)가 크롤 구간 속도와 일치해 정지 없이
+     속도가 연속으로 이어진다 (-100 ≡ 0 이라 바퀴 이음새도 없음) */
+  animation: toast-ring-move 3.6s cubic-bezier(0.8, 0.35, 0.2, 0.65) infinite;
+}
+
+.toast-ring-tail-glow {
+  stroke-dasharray: 14 86;
+  stroke: color-mix(in oklch, var(--toast-accent) 80%, transparent);
+  stroke-width: 4.5;
+  filter: blur(2.5px);
+}
+
+@keyframes toast-ring-move {
+  0% {
+    stroke-dashoffset: var(--tail-shift);
+  }
+  80% {
+    stroke-dashoffset: calc(var(--tail-shift) - 90px);
+    animation-timing-function: linear;
+  }
+  100% {
+    stroke-dashoffset: calc(var(--tail-shift) - 100px);
+  }
+}
+
+/* breathe: 글로우/링 레이어 밝기가 숨쉬듯 오르내림
+   — pulse와 주기·이징·정점 위치를 맞춰 중첩 시 한 박자로 뛴다 */
+.toast-breathe {
+  animation: toast-breathe 2s ease-out infinite;
+}
+
+@keyframes toast-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* pulse: 테두리가 "쿵—" 하고 빛났다 잦아드는 박동을 무한 반복
+   — 형태(box-shadow)는 고정하고 opacity만 흔들어 GPU 합성으로 부드럽게 */
+.toast-pulse {
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklch, var(--toast-accent) 85%, transparent),
+    inset 0 0 36px -2px color-mix(in oklch, var(--toast-accent) 65%, transparent);
+  opacity: 0;
+  animation: toast-pulse 2s ease-out infinite;
+}
+
+@keyframes toast-pulse {
+  /* 바닥 0.2 — 완전히 꺼지지 않고 은은하게 존재하며 박동 */
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  /* 50/50 대칭 박동 */
+  50% {
+    opacity: 1;
+  }
+}
+
+/* shimmer: 비스듬한 광택이 표면을 주기적으로 스윕
+   — background-position 퍼센트 애니메이션은 WebView2에서 사이클마다
+   렌더링이 어긋나므로 transform(GPU 합성) 기반으로 구현 */
+.toast-shimmer {
+  overflow: hidden;
+}
+
+.toast-shimmer::after {
+  content: "";
+  position: absolute;
+  /* skewX로 기울어진 모서리가 화면 안에서 잘리지 않도록 위아래 확장
+     (보이는 영역 클리핑은 부모 overflow가 담당) */
+  top: -60%;
+  bottom: -60%;
+  left: 0;
+  width: 60%;
+  /* 그라데이션은 수평 — 빛줄기 기울기는 skewX가 담당.
+     요소 좌우 변에서 그라데이션이 정확히 투명해져 절단면이 안 생긴다 */
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--toast-highlight) 60%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-130%) skewX(-20deg);
+  /* 이동 범위를 화면 양끝에 밀착시켜 가속(진입)·감속(이탈)이 화면 안에서 보이게.
+     ±30%p 여유는 skew된 모서리가 휴지 중 화면에 새어 보이지 않게 하는 최소치 */
+  animation: toast-shimmer 3.6s cubic-bezier(0.75, 0, 0.25, 1) infinite;
+}
+
+/* 0→60%: 가속-감속 스윕, 60→100%: 휴지 */
+@keyframes toast-shimmer {
+  0% {
+    transform: translateX(-130%) skewX(-20deg);
+  }
+  60%,
+  100% {
+    transform: translateX(200%) skewX(-20deg);
+  }
+}
+
 /* Vue Transition: toast */
 .toast-enter-active {
   transition: all 0.25s ease-out;

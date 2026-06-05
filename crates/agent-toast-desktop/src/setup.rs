@@ -90,6 +90,18 @@ pub struct HookConfig {
     /// fallback 으로 동작한다.
     #[serde(default = "default_dynamic_message_enabled")]
     pub dynamic_message_enabled: bool,
+    /// 알림 토스트 액센트 바: "left" | "none"
+    #[serde(default = "default_toast_bar")]
+    pub toast_bar: String,
+    /// 알림 토스트 테두리: "subtle"(은은) | "accent"(이벤트색 강조)
+    #[serde(default = "default_toast_border")]
+    pub toast_border: String,
+    /// 알림 토스트 이펙트 (중첩 가능): "ring" | "breathe" | "pulse" | "shimmer"
+    #[serde(default)]
+    pub toast_effects: Vec<String>,
+    /// 알림 토스트 배경: "glow"(코너 글로우) | "tint"(전체 틴트) | "flat"
+    #[serde(default = "default_toast_body")]
+    pub toast_body: String,
 }
 
 fn default_title_display_mode() -> String {
@@ -138,6 +150,18 @@ fn default_theme() -> String {
 
 fn default_dynamic_message_enabled() -> bool {
     true
+}
+
+fn default_toast_bar() -> String {
+    "left".into()
+}
+
+fn default_toast_border() -> String {
+    "subtle".into()
+}
+
+fn default_toast_body() -> String {
+    "glow".into()
 }
 
 fn default_locale() -> String {
@@ -296,6 +320,10 @@ impl Default for HookConfig {
             version: String::new(),
             theme: default_theme(),
             dynamic_message_enabled: default_dynamic_message_enabled(),
+            toast_bar: default_toast_bar(),
+            toast_border: default_toast_border(),
+            toast_effects: Vec::new(),
+            toast_body: default_toast_body(),
         }
     }
 }
@@ -403,6 +431,26 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         dynamic_message_enabled: root["agent_toast"]["dynamic_message_enabled"]
             .as_bool()
             .unwrap_or_else(default_dynamic_message_enabled),
+        toast_bar: root["agent_toast"]["toast_bar"]
+            .as_str()
+            .unwrap_or("left")
+            .to_string(),
+        toast_border: root["agent_toast"]["toast_border"]
+            .as_str()
+            .unwrap_or("subtle")
+            .to_string(),
+        toast_effects: root["agent_toast"]["toast_effects"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        toast_body: root["agent_toast"]["toast_body"]
+            .as_str()
+            .unwrap_or("glow")
+            .to_string(),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
     };
@@ -672,6 +720,26 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert(
         "dynamic_message_enabled".into(),
         Value::Bool(config.dynamic_message_enabled),
+    );
+    cn.insert("toast_bar".into(), Value::String(config.toast_bar.clone()));
+    cn.insert(
+        "toast_border".into(),
+        Value::String(config.toast_border.clone()),
+    );
+    cn.insert(
+        "toast_effects".into(),
+        Value::Array(
+            config
+                .toast_effects
+                .iter()
+                .cloned()
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    cn.insert(
+        "toast_body".into(),
+        Value::String(config.toast_body.clone()),
     );
     cn.insert(
         "version".into(),
@@ -1192,6 +1260,34 @@ pub fn write_theme(theme: &str) -> Result<(), String> {
     std::fs::write(&path, updated).map_err(|e| e.to_string())
 }
 
+/// 알림 창이 렌더링에 사용하는 토스트 디자인 4축 값.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToastStyle {
+    pub bar: String,
+    pub border: String,
+    pub effects: Vec<String>,
+    pub body: String,
+}
+
+/// settings.json 문자열에서 ToastStyle 추출 — 누락/실패 시 기본값.
+fn toast_style_from_json(content: &str) -> ToastStyle {
+    let config = parse_hook_config_from_json(content);
+    ToastStyle {
+        bar: config.toast_bar,
+        border: config.toast_border,
+        effects: config.toast_effects,
+        body: config.toast_body,
+    }
+}
+
+/// 알림 창 mount 시 1회 호출 — 파일 읽기 실패 시 기본값.
+#[tauri::command]
+pub fn get_toast_style() -> ToastStyle {
+    let path = settings_path();
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    toast_style_from_json(&content)
+}
+
 fn codex_config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -1556,6 +1652,88 @@ mod tests {
         assert_eq!(config.notification_position, "top_left");
         assert!(!config.notification_sound);
         assert_eq!(config.notification_monitor, "1");
+    }
+
+    #[test]
+    fn toast_style_from_json_defaults() {
+        let style = toast_style_from_json("{}");
+        assert_eq!(style.bar, "left");
+        assert_eq!(style.border, "subtle");
+        assert!(style.effects.is_empty());
+        assert_eq!(style.body, "glow");
+    }
+
+    #[test]
+    fn toast_style_from_json_values() {
+        let json = r#"{
+            "agent_toast": {
+                "toast_bar": "none",
+                "toast_border": "accent",
+                "toast_effects": ["shimmer"],
+                "toast_body": "flat"
+            }
+        }"#;
+        let style = toast_style_from_json(json);
+        assert_eq!(style.bar, "none");
+        assert_eq!(style.border, "accent");
+        assert_eq!(style.effects, vec!["shimmer"]);
+        assert_eq!(style.body, "flat");
+    }
+
+    /// agent_toast 섹션에 toast_* 키가 없으면 기본값 (현재 디자인과 동일 조합)
+    #[test]
+    fn parse_toast_style_defaults_when_missing() {
+        let config = parse_hook_config_from_json("{}");
+        assert_eq!(config.toast_bar, "left");
+        assert_eq!(config.toast_border, "subtle");
+        assert!(config.toast_effects.is_empty());
+        assert_eq!(config.toast_body, "glow");
+    }
+
+    #[test]
+    fn parse_toast_style_values() {
+        let json = r#"{
+            "agent_toast": {
+                "toast_bar": "none",
+                "toast_border": "accent",
+                "toast_effects": ["ring", "breathe"],
+                "toast_body": "tint"
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert_eq!(config.toast_bar, "none");
+        assert_eq!(config.toast_border, "accent");
+        assert_eq!(config.toast_effects, vec!["ring", "breathe"]);
+        assert_eq!(config.toast_body, "tint");
+    }
+
+    /// toast_effects 배열에 문자열이 아닌 항목이 섞여도 무시하고 파싱 (전방 호환)
+    #[test]
+    fn parse_toast_effects_skips_non_strings() {
+        let json = r#"{ "agent_toast": { "toast_effects": ["ring", 42, null] } }"#;
+        let config = parse_hook_config_from_json(json);
+        assert_eq!(config.toast_effects, vec!["ring"]);
+    }
+
+    /// write → parse 라운드트립으로 toast_* 4키 보존 확인
+    #[test]
+    fn toast_style_write_roundtrip() {
+        let config = HookConfig {
+            toast_bar: "none".into(),
+            toast_border: "accent".into(),
+            toast_effects: vec!["pulse".into(), "shimmer".into()],
+            toast_body: "flat".into(),
+            ..HookConfig::default()
+        };
+
+        let mut root = Value::Object(Default::default());
+        write_agent_toast_settings(&mut root, &config);
+        let parsed = parse_hook_config_from_json(&root.to_string());
+
+        assert_eq!(parsed.toast_bar, "none");
+        assert_eq!(parsed.toast_border, "accent");
+        assert_eq!(parsed.toast_effects, vec!["pulse", "shimmer"]);
+        assert_eq!(parsed.toast_body, "flat");
     }
 
     #[test]

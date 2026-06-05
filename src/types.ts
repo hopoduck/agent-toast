@@ -55,10 +55,25 @@ export interface HookConfig {
   http_port: number;
   show_hostname: boolean;
   dynamic_message_enabled: boolean;
+  toast_bar: string;
+  toast_border: string;
+  toast_effects: string[];
+  toast_body: string;
 }
 
 export interface MonitorInfo {
   name: string;
   work_area: [number, number, number, number];
   is_primary: boolean;
+}
+
+export interface ToastStyle {
+  /** "left" | "none" */
+  bar: string;
+  /** "subtle" | "accent" */
+  border: string;
+  /** "ring" | "breathe" | "pulse" | "shimmer" — 중첩 가능 */
+  effects: string[];
+  /** "glow" | "tint" | "flat" */
+  body: string;
 }
