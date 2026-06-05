@@ -117,7 +117,7 @@ const config = ref<HookConfig>({
   http_enabled: false,
   http_port: 38787,
   show_hostname: true,
-  dynamic_message_enabled: false,
+  dynamic_message_enabled: true,
 });
 
 watch(
@@ -253,7 +253,7 @@ function onReset() {
     http_enabled: false,
     http_port: 38787,
     show_hostname: true,
-    dynamic_message_enabled: false,
+    dynamic_message_enabled: true,
   };
 }
 

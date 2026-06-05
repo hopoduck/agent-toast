@@ -71,7 +71,7 @@ Or right-click the system tray icon → Settings
 
 Enable desired events in the settings window to automatically register hooks.
 
-> 💡 Turn on **Use Agent's Message** in the General tab to show the agent's last message (or the tool description on permission requests) as the notification body instead of each hook's fixed text.
+> 💡 By default the notification body shows the agent's last message (or the tool description on permission requests). Turn off **Use Agent's Message** in the General tab to show each hook's fixed text instead.
 
 | Platform    | Config File               |
 | ----------- | ------------------------- |
@@ -104,10 +104,11 @@ curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-t
   -o ~/.local/bin/agent-toast-send
 chmod +x ~/.local/bin/agent-toast-send
 
-agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
+agent-toast-send init --url http://<desktop-ip>:38787 --dynamic [--hostname "prod"]
 ```
 
 - `<desktop-ip>` is the address reachable from the server to your desktop (Tailscale, LAN, SSH `-R`). Network reachability is the user's responsibility and is not managed by the app.
+- `--dynamic` shows the agent's last message (or the tool description on permission requests) as the notification body (omit for fixed text).
 - `--hostname` sets the label shown in the toast (omit to auto-detect via `hostname(1)`).
 - Default hooks registered: **Stop** (task completion), **Notification** (permission request). For finer customization, edit `~/.claude/settings.json` on the server directly.
 

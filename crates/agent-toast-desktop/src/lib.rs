@@ -374,6 +374,11 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             let handle = app.handle().clone();
             let state = mgr_state.clone();
 
+            // One-shot migration: append --dynamic to pre-existing agent-toast
+            // hooks for users who never stored a dynamic_message_enabled choice
+            // (idempotent — records the key, so subsequent starts no-op).
+            setup::run_dynamic_message_migration();
+
             // System tray
             let tray_handle = handle.clone();
             let locale = setup::read_locale();

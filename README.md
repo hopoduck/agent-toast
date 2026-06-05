@@ -71,7 +71,7 @@ agent-toast.exe --setup
 
 설정 창에서 원하는 이벤트를 활성화하면 자동으로 훅이 등록됩니다.
 
-> 💡 일반 탭의 **에이전트 메시지 사용**을 켜면 알림 본문에 각 훅의 고정 문구 대신 에이전트의 마지막 메시지(권한 요청 시 도구 설명)가 표시됩니다.
+> 💡 알림 본문에는 기본으로 에이전트의 마지막 메시지(권한 요청 시 도구 설명)가 표시됩니다. 일반 탭의 **에이전트 메시지 사용**을 끄면 각 훅의 고정 문구가 표시됩니다.
 
 | 플랫폼      | 설정 파일                 |
 | ----------- | ------------------------- |
@@ -104,10 +104,11 @@ curl -L https://github.com/hopoduck/agent-toast/releases/latest/download/agent-t
   -o ~/.local/bin/agent-toast-send
 chmod +x ~/.local/bin/agent-toast-send
 
-agent-toast-send init --url http://<desktop-ip>:38787 [--hostname "prod"]
+agent-toast-send init --url http://<desktop-ip>:38787 --dynamic [--hostname "prod"]
 ```
 
 - `<desktop-ip>` 는 서버에서 데스크톱에 도달 가능한 주소 (Tailscale, LAN, SSH `-R`). 네트워크 도달성은 사용자 책임이며 앱이 관리하지 않습니다.
+- `--dynamic` 은 알림 본문에 에이전트의 마지막 메시지(권한 요청 시 도구 설명)를 표시 (생략 시 고정 문구).
 - `--hostname` 은 토스트에 표시되는 라벨 (생략 시 `hostname(1)` 자동 감지).
 - 기본 등록 훅: **Stop**(작업 완료), **Notification**(권한 요청). 더 세밀한 커스터마이즈는 서버의 `~/.claude/settings.json` 을 직접 편집하면 됩니다.
 

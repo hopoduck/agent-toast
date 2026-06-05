@@ -85,10 +85,10 @@ pub struct HookConfig {
     /// UI 테마: "system" | "light" | "dark" (기본 system = OS 설정 추종)
     #[serde(default = "default_theme")]
     pub theme: String,
-    /// 알림 본문에 에이전트의 마지막 메시지(또는 도구 설명)를 동적으로 사용 (기본 false).
+    /// 알림 본문에 에이전트의 마지막 메시지(또는 도구 설명)를 동적으로 사용 (기본 true).
     /// 켜지면 모든 알림 훅 커맨드에 `--dynamic` 이 붙고, 입력칸 문구는 추출 실패 시
     /// fallback 으로 동작한다.
-    #[serde(default)]
+    #[serde(default = "default_dynamic_message_enabled")]
     pub dynamic_message_enabled: bool,
 }
 
@@ -134,6 +134,10 @@ fn default_show_hostname() -> bool {
 
 fn default_theme() -> String {
     "system".into()
+}
+
+fn default_dynamic_message_enabled() -> bool {
+    true
 }
 
 fn default_locale() -> String {
@@ -291,7 +295,7 @@ impl Default for HookConfig {
             codex_enabled: false,
             version: String::new(),
             theme: default_theme(),
-            dynamic_message_enabled: false,
+            dynamic_message_enabled: default_dynamic_message_enabled(),
         }
     }
 }
@@ -398,7 +402,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .unwrap_or_else(default_show_hostname),
         dynamic_message_enabled: root["agent_toast"]["dynamic_message_enabled"]
             .as_bool()
-            .unwrap_or(false),
+            .unwrap_or_else(default_dynamic_message_enabled),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
     };
@@ -687,6 +691,81 @@ fn apply_dynamic_flag(entries: &mut [HookEntry], enabled: bool) {
     for e in entries.iter_mut() {
         if !e.command.contains("--daemon") {
             e.command.push_str(" --dynamic");
+        }
+    }
+}
+
+/// One-shot migration for hooks registered before `dynamic_message_enabled`
+/// defaulted to true: surgically append ` --dynamic` to existing agent-toast
+/// notification commands (no regeneration — hand-tuned messages and exe paths
+/// stay untouched), then record `agent_toast.dynamic_message_enabled: true` so
+/// subsequent runs are a no-op.
+///
+/// Returns `Some(new_json)` only when the file should be rewritten. `None`:
+/// - the key already exists (user made a choice, or already migrated),
+/// - no agent-toast hooks are registered (fresh install — the new default
+///   applies on first save),
+/// - the content isn't a JSON object.
+fn migrate_dynamic_message_default(content: &str) -> Option<String> {
+    let Ok(mut root) = serde_json::from_str::<Value>(content) else {
+        return None;
+    };
+    if !root.is_object() {
+        return None;
+    }
+    if root["agent_toast"]["dynamic_message_enabled"]
+        .as_bool()
+        .is_some()
+    {
+        return None;
+    }
+
+    let mut found_agent_toast = false;
+    if let Some(events) = root.get_mut("hooks").and_then(Value::as_object_mut) {
+        for groups in events.values_mut() {
+            let Some(groups) = groups.as_array_mut() else {
+                continue;
+            };
+            for group in groups {
+                let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
+                    continue;
+                };
+                for hook in hooks {
+                    let Some(cmd) = hook.get("command").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if !is_agent_toast_cmd(cmd) {
+                        continue;
+                    }
+                    found_agent_toast = true;
+                    if !cmd.contains("--daemon") && !cmd.contains("--dynamic") {
+                        hook["command"] = Value::String(format!("{cmd} --dynamic"));
+                    }
+                }
+            }
+        }
+    }
+    if !found_agent_toast {
+        return None;
+    }
+
+    // Record the resolved choice — this is what makes the migration idempotent.
+    root["agent_toast"]["dynamic_message_enabled"] = Value::Bool(true);
+    serde_json::to_string_pretty(&root).ok()
+}
+
+/// Run [`migrate_dynamic_message_default`] against `~/.claude/settings.json`.
+/// Called once at daemon startup; cheap no-op once migrated (or for fresh
+/// installs), and only writes the file when something actually changed.
+pub fn run_dynamic_message_migration() {
+    let path = settings_path();
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    if let Some(updated) = migrate_dynamic_message_default(&content) {
+        match std::fs::write(&path, updated) {
+            Ok(()) => log::info!("[migrate] appended --dynamic to existing agent-toast hooks"),
+            Err(e) => log::warn!("[migrate] failed to write settings.json: {e}"),
         }
     }
 }
@@ -2528,9 +2607,9 @@ mod theme_tests {
     }
 
     #[test]
-    fn parse_dynamic_message_defaults_false_when_absent() {
+    fn parse_dynamic_message_defaults_true_when_absent() {
         let config = parse_hook_config_from_json("{}");
-        assert!(!config.dynamic_message_enabled);
+        assert!(config.dynamic_message_enabled);
     }
 
     #[test]
@@ -2567,5 +2646,133 @@ mod theme_tests {
         }];
         apply_dynamic_flag(&mut entries, false);
         assert!(!entries[0].command.contains("--dynamic"));
+    }
+
+    /// 키 없음 + agent-toast 훅 존재 시 settings.json 의 전형적인 형태
+    fn legacy_settings_json() -> String {
+        serde_json::json!({
+            "hooks": {
+                "SessionStart": [{
+                    "hooks": [{ "type": "command", "command": "\"C:\\at\\agent-toast.exe\" --daemon" }]
+                }],
+                "Stop": [{
+                    "hooks": [
+                        { "type": "command", "command": "\"C:\\at\\agent-toast.exe\" --event task_complete --message \"내 문구\"" },
+                        { "type": "command", "command": "/usr/bin/other-tool --flag" }
+                    ]
+                }]
+            },
+            "agent_toast": { "theme": "dark" }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn migrate_appends_dynamic_and_records_key() {
+        let out = migrate_dynamic_message_default(&legacy_settings_json()).expect("should migrate");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let stop_cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(
+            stop_cmd.ends_with(" --dynamic"),
+            "알림 커맨드에 --dynamic 추가"
+        );
+        assert!(
+            stop_cmd.contains("--message \"내 문구\""),
+            "손수정 문구 보존"
+        );
+        assert_eq!(
+            v["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "\"C:\\at\\agent-toast.exe\" --daemon",
+            "--daemon 엔트리는 무변경"
+        );
+        assert_eq!(
+            v["hooks"]["Stop"][0]["hooks"][1]["command"], "/usr/bin/other-tool --flag",
+            "비 agent-toast 훅은 무변경"
+        );
+        assert_eq!(v["agent_toast"]["dynamic_message_enabled"], true, "키 기록");
+        assert_eq!(
+            v["agent_toast"]["theme"], "dark",
+            "기존 agent_toast 키 보존"
+        );
+    }
+
+    #[test]
+    fn migrate_noop_when_key_present() {
+        for stored in [true, false] {
+            let json = serde_json::json!({
+                "agent_toast": { "dynamic_message_enabled": stored },
+                "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "\"at.exe\" --event task_complete" }] }] }
+            })
+            .to_string();
+            assert!(
+                migrate_dynamic_message_default(&json).is_none(),
+                "키가 {stored} 로 있으면 사용자 선택 존중 → no-op"
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_noop_without_agent_toast_hooks() {
+        let json = serde_json::json!({
+            "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "/usr/bin/other-tool" }] }] }
+        })
+        .to_string();
+        assert!(
+            migrate_dynamic_message_default(&json).is_none(),
+            "신규 사용자 → no-op"
+        );
+        assert!(
+            migrate_dynamic_message_default("{}").is_none(),
+            "빈 설정 → no-op"
+        );
+    }
+
+    #[test]
+    fn migrate_no_double_append_when_dynamic_already_present() {
+        let json = serde_json::json!({
+            "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "\"C:\\at\\agent-toast.exe\" --event task_complete --dynamic" }] }] }
+        })
+        .to_string();
+        // 훅은 있으니 키 기록을 위해 Some 이지만, 커맨드는 그대로여야 한다.
+        let out = migrate_dynamic_message_default(&json).expect("key should still be recorded");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(!cmd.contains("--dynamic --dynamic"), "중복 append 금지");
+        assert_eq!(v["agent_toast"]["dynamic_message_enabled"], true);
+    }
+
+    #[test]
+    fn migrate_covers_send_commands_too() {
+        // 데스크톱 settings.json 에 수동 등록된 agent-toast-send 훅도 동일하게 마이그레이션
+        let json = serde_json::json!({
+            "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "agent-toast-send --url http://x:38787 --event task_complete" }] }] }
+        })
+        .to_string();
+        let out = migrate_dynamic_message_default(&json).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(cmd.ends_with(" --dynamic"));
+    }
+
+    #[test]
+    fn migrate_noop_on_invalid_or_non_object_json() {
+        assert!(migrate_dynamic_message_default("not json {").is_none());
+        assert!(migrate_dynamic_message_default("[1,2,3]").is_none());
+        assert!(migrate_dynamic_message_default("").is_none());
+    }
+
+    #[test]
+    fn migrate_is_idempotent() {
+        let first = migrate_dynamic_message_default(&legacy_settings_json()).unwrap();
+        assert!(
+            migrate_dynamic_message_default(&first).is_none(),
+            "1회 실행 후엔 키가 있으니 영구 no-op"
+        );
     }
 }

@@ -68,12 +68,17 @@ function shellQuote(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+// 데스크톱의 "에이전트 메시지 사용" 토글을 원격 가이드 커맨드에도 반영
+const dynamicPart = computed(() =>
+  config.value.dynamic_message_enabled ? " --dynamic" : "",
+);
+
 const installCmd = computed(() => {
   const u = url.value.trim();
   if (!u) return "";
   const h = hostname.value.trim();
   const hostPart = h ? ` --hostname ${shellQuote(h)}` : "";
-  return `agent-toast-send init --url ${u}${hostPart}`;
+  return `agent-toast-send init --url ${u}${hostPart}${dynamicPart.value}`;
 });
 
 const hookCmd = computed(() => {
@@ -82,7 +87,7 @@ const hookCmd = computed(() => {
   const h = hostname.value.trim();
   const hostPart = h ? ` --hostname ${shellQuote(h)}` : "";
   const msg = t("defaults.stop_message");
-  return `agent-toast-send --url ${u} --event task_complete --message ${shellQuote(msg)}${hostPart}`;
+  return `agent-toast-send --url ${u} --event task_complete --message ${shellQuote(msg)}${hostPart}${dynamicPart.value}`;
 });
 
 const downloadSnippet = computed(() => {
