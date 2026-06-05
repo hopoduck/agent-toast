@@ -81,7 +81,13 @@ pub fn resolve_message(hook: &Value, fallback: Option<&str>) -> Option<String> {
 /// Any failure (no stdin, empty, bad JSON, no usable field) falls back to
 /// `fallback` so the toast is never empty.
 pub fn resolve_from_stdin(fallback: Option<&str>) -> Option<String> {
-    use std::io::Read;
+    use std::io::{IsTerminal, Read};
+    // Manual terminal invocation: no hook JSON will ever arrive on stdin, and
+    // read_to_string would block forever waiting for EOF — bail out to the
+    // fallback immediately. Hook invocations pipe stdin, so they skip this.
+    if std::io::stdin().is_terminal() {
+        return fallback.map(str::to_string);
+    }
     let mut buf = String::new();
     if std::io::stdin().read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
         return fallback.map(str::to_string);
