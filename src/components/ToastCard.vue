@@ -179,13 +179,31 @@ const ringShadow = computed(() => {
       : "color-mix(in oklch, var(--toast-accent) var(--toast-ring), transparent)";
   return `inset 0 0 0 1px ${ring}, inset 0 1px 0 0 var(--toast-highlight)`;
 });
+
+// 폰트(sans/mono) 축: 사용자가 고른 폰트를 CSS 변수로 override.
+// 빈 값이면 키를 넣지 않아 global.css의 기본 체인이 그대로 적용된다.
+const fontVars = computed(() => {
+  const v: Record<string, string> = {};
+  if (props.toastStyle.font_sans) {
+    v["--font-sans"] =
+      `"${props.toastStyle.font_sans}", "Pretendard Variable", sans-serif`;
+  }
+  if (props.toastStyle.font_mono) {
+    v["--font-mono"] = `"${props.toastStyle.font_mono}", "D2Coding", monospace`;
+  }
+  return v;
+});
 </script>
 
 <template>
   <div
     class="relative flex rounded-xl overflow-hidden select-none bg-gradient-to-b from-toast-surface-from to-toast-surface-to shadow-[var(--toast-shadow)] opacity-0 translate-x-5 scale-[0.97] transition-all duration-300 ease-out"
     :class="{ 'opacity-100! translate-x-0! scale-100!': show }"
-    :style="{ '--toast-accent': styles.accentVar }"
+    :style="{
+      '--toast-accent': styles.accentVar,
+      fontFamily: 'var(--font-sans)',
+      ...fontVars,
+    }"
   >
     <!-- 배경 + 테두리 레이어 (breathe 이펙트 대상) -->
     <div

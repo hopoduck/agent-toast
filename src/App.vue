@@ -45,6 +45,8 @@ const toastStyle = ref<ToastStyle>({
   border: "subtle",
   effects: [],
   body: "glow",
+  font_sans: "",
+  font_mono: "",
 });
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 let currentNotificationId: string | null = null;

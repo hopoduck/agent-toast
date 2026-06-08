@@ -41,7 +41,7 @@
     "desc": "Compose the notification toast design layer by layer. Applies from the next notification after saving.",
     "preview": "Preview",
     "preview_title": "agent-toast",
-    "preview_message": "Notification design **preview**",
+    "preview_message": "**Build complete** — `pnpm tauri build`",
     "section_layers": "Layers",
     "section_effects": "Effects",
     "bar": "Accent bar",
@@ -61,7 +61,12 @@
     "effect_pulse": "Pulse",
     "effect_pulse_desc": "The border glow pulses rhythmically",
     "effect_shimmer": "Shimmer",
-    "effect_shimmer_desc": "A sheen periodically sweeps the surface"
+    "effect_shimmer_desc": "A sheen periodically sweeps the surface",
+    "test_notification": "Test notification",
+    "section_font": "Font",
+    "font_sans": "Body font",
+    "font_mono": "Code font",
+    "font_default": "Default"
   },
   "general": {
     "desc": "Configure notification behavior and display.",

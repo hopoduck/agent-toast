@@ -41,7 +41,7 @@
     "desc": "알림 토스트의 디자인을 레이어별로 조합합니다. 저장 후 다음 알림부터 적용됩니다.",
     "preview": "미리보기",
     "preview_title": "agent-toast",
-    "preview_message": "알림 디자인 **미리보기**입니다",
+    "preview_message": "**빌드 완료** — `pnpm tauri build`",
     "section_layers": "레이어",
     "section_effects": "이펙트",
     "bar": "액센트 바",
@@ -61,7 +61,12 @@
     "effect_pulse": "펄스",
     "effect_pulse_desc": "테두리 글로우가 주기적으로 박동합니다",
     "effect_shimmer": "시머",
-    "effect_shimmer_desc": "표면을 광택이 주기적으로 스칩니다"
+    "effect_shimmer_desc": "표면을 광택이 주기적으로 스칩니다",
+    "test_notification": "테스트 알림",
+    "section_font": "폰트",
+    "font_sans": "본문 폰트",
+    "font_mono": "코드 폰트",
+    "font_default": "기본"
   },
   "general": {
     "desc": "알림 동작과 표시 방식을 설정합니다.",

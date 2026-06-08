@@ -123,6 +123,8 @@ const config = ref<HookConfig>({
   toast_border: "subtle",
   toast_effects: [],
   toast_body: "glow",
+  toast_font_sans: "",
+  toast_font_mono: "",
 });
 
 watch(
@@ -269,11 +271,16 @@ function onReset() {
     toast_border: "subtle",
     toast_effects: [],
     toast_body: "glow",
+    toast_font_sans: "",
+    toast_font_mono: "",
   };
 }
 
 async function onTestNotification() {
-  await invoke("test_notification");
+  await invoke("test_notification", {
+    title: t("design.preview_title"),
+    message: t("design.preview_message"),
+  });
 }
 
 async function onClose() {
@@ -391,7 +398,11 @@ async function onClose() {
             v-model="config"
             @test-notification="onTestNotification"
           />
-          <DesignSettings v-if="activeTab === 'design'" v-model="config" />
+          <DesignSettings
+            v-if="activeTab === 'design'"
+            v-model="config"
+            @test-notification="onTestNotification"
+          />
           <HookSettings v-if="activeTab === 'hooks'" v-model="config" />
           <RemoteSettings v-if="activeTab === 'remote'" v-model="config" />
           <HowtoSettings v-if="activeTab === 'howto'" />

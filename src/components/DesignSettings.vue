@@ -6,9 +6,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Layers, Sparkles } from "lucide-vue-next";
-import { computed, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { Layers, Sparkles, Type } from "lucide-vue-next";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { HookConfig, NotificationData, ToastStyle } from "../types";
 import ToastCard from "./ToastCard.vue";
@@ -17,6 +19,8 @@ const { t, locale } = useI18n();
 
 const config = defineModel<HookConfig>({ required: true });
 
+const emit = defineEmits<{ "test-notification": [] }>();
+
 type PreviewEvent = "task_complete" | "user_input_required" | "error";
 const previewEvent = ref<PreviewEvent>("task_complete");
 const previewEvents: PreviewEvent[] = [
@@ -24,6 +28,35 @@ const previewEvents: PreviewEvent[] = [
   "user_input_required",
   "error",
 ];
+
+const systemFonts = ref<string[]>([]);
+onMounted(async () => {
+  try {
+    systemFonts.value = await invoke<string[]>("list_system_fonts");
+  } catch {
+    systemFonts.value = [];
+  }
+});
+
+// shadcn(reka-ui) Select 는 빈 문자열 value 를 못 쓰므로 "기본"을 sentinel 로
+// 표현하고 config 에는 "" 로 저장한다.
+const FONT_DEFAULT = "__default__";
+const fontSans = computed({
+  get: () => config.value.toast_font_sans || FONT_DEFAULT,
+  set: (v: string) => {
+    config.value.toast_font_sans = v === FONT_DEFAULT ? "" : v;
+  },
+});
+const fontMono = computed({
+  get: () => config.value.toast_font_mono || FONT_DEFAULT,
+  set: (v: string) => {
+    config.value.toast_font_mono = v === FONT_DEFAULT ? "" : v;
+  },
+});
+
+// 기본(번들) 폰트 — 빈 값일 때 실제로 적용되는 폰트명
+const DEFAULT_SANS = "Pretendard";
+const DEFAULT_MONO = "D2Coding";
 
 const previewData = computed<NotificationData>(() => ({
   id: "preview",
@@ -43,6 +76,8 @@ const previewStyle = computed<ToastStyle>(() => ({
   border: config.value.toast_border,
   effects: config.value.toast_effects,
   body: config.value.toast_body,
+  font_sans: config.value.toast_font_sans,
+  font_mono: config.value.toast_font_mono,
 }));
 
 // 설정이 바뀔 때마다 카드를 재마운트해 등장형 이펙트(펄스)도 다시 재생
@@ -112,7 +147,7 @@ function setEffect(name: string, on: boolean) {
           class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/50"
           >{{ t("design.preview") }}</span
         >
-        <div class="flex gap-1">
+        <div class="flex gap-1 items-center">
           <button
             v-for="ev in previewEvents"
             :key="ev"
@@ -126,6 +161,14 @@ function setEffect(name: string, on: boolean) {
           >
             {{ t(`event.${ev}`) }}
           </button>
+          <Button
+            variant="secondary"
+            size="sm"
+            class="h-auto px-2 py-0.5 text-[11px] ml-1"
+            @click="emit('test-notification')"
+          >
+            {{ t("design.test_notification") }}
+          </Button>
         </div>
       </div>
       <div
@@ -267,6 +310,98 @@ function setEffect(name: string, on: boolean) {
             :model-value="effectEnabled(e.value)"
             @update:model-value="(v: boolean) => setEffect(e.value, v)"
           />
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: Fonts (시스템 폰트 선택, 빈 값=기본 번들) -->
+    <section
+      class="anim-item flex flex-col gap-1.5"
+      style="animation-delay: 140ms"
+    >
+      <div class="flex items-center gap-1.5 px-1">
+        <Type :size="12" class="text-muted-foreground/50" />
+        <span
+          class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/50"
+          >{{ t("design.section_font") }}</span
+        >
+      </div>
+      <div
+        class="rounded-[12px] border border-border overflow-hidden divide-y divide-border"
+      >
+        <div
+          class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
+        >
+          <span class="text-sm font-medium text-foreground">{{
+            t("design.font_sans")
+          }}</span>
+          <Select :key="`font-sans-${locale}`" v-model="fontSans">
+            <SelectTrigger
+              size="sm"
+              class="w-[180px]"
+              :style="{
+                fontFamily:
+                  fontSans !== FONT_DEFAULT
+                    ? `'${fontSans}'`
+                    : `'${DEFAULT_SANS}'`,
+              }"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent class="max-h-[280px]">
+              <SelectItem
+                :value="FONT_DEFAULT"
+                :style="{ fontFamily: `'${DEFAULT_SANS}'` }"
+              >
+                {{ DEFAULT_SANS }} ({{ t("design.font_default") }})
+              </SelectItem>
+              <SelectItem
+                v-for="f in systemFonts"
+                :key="f"
+                :value="f"
+                :style="{ fontFamily: `'${f}'` }"
+              >
+                {{ f }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div
+          class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
+        >
+          <span class="text-sm font-medium text-foreground">{{
+            t("design.font_mono")
+          }}</span>
+          <Select :key="`font-mono-${locale}`" v-model="fontMono">
+            <SelectTrigger
+              size="sm"
+              class="w-[180px]"
+              :style="{
+                fontFamily:
+                  fontMono !== FONT_DEFAULT
+                    ? `'${fontMono}'`
+                    : `'${DEFAULT_MONO}'`,
+              }"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent class="max-h-[280px]">
+              <SelectItem
+                :value="FONT_DEFAULT"
+                :style="{ fontFamily: `'${DEFAULT_MONO}'` }"
+              >
+                {{ DEFAULT_MONO }} ({{ t("design.font_default") }})
+              </SelectItem>
+              <SelectItem
+                v-for="f in systemFonts"
+                :key="f"
+                :value="f"
+                :style="{ fontFamily: `'${f}'` }"
+              >
+                {{ f }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </section>

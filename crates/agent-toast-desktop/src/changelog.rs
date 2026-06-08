@@ -98,7 +98,10 @@ mod tests {
     #[test]
     fn falls_back_to_full_body_when_no_markers() {
         let body = "  Agent Toast 업데이트입니다.\n- 항목  ";
-        assert_eq!(extract_changelog(body), "Agent Toast 업데이트입니다.\n- 항목");
+        assert_eq!(
+            extract_changelog(body),
+            "Agent Toast 업데이트입니다.\n- 항목"
+        );
     }
 
     #[test]

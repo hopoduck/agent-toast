@@ -1,5 +1,6 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+import "d2coding/d2coding-ligature-full.css";
 import { createApp } from "vue";
 import App from "./App.vue";
 import "./global.css";

@@ -92,8 +92,8 @@
   --font-sans:
     "Pretendard Variable", Pretendard, -apple-system, sans-serif;
   --font-mono:
-    "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono", Consolas,
-    monospace;
+    "D2Coding", "D2Coding Ligature", "D2CodingLigature", "Cascadia Mono",
+    Consolas, monospace;
 }
 
 :root {

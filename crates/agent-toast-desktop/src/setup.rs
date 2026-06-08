@@ -102,6 +102,12 @@ pub struct HookConfig {
     /// 알림 토스트 배경: "glow"(코너 글로우) | "tint"(전체 틴트) | "flat"
     #[serde(default = "default_toast_body")]
     pub toast_body: String,
+    /// 알림 토스트 본문 폰트 패밀리명. "" = 기본(번들 Pretendard)
+    #[serde(default)]
+    pub toast_font_sans: String,
+    /// 알림 토스트 코드 폰트 패밀리명. "" = 기본(번들 D2Coding)
+    #[serde(default)]
+    pub toast_font_mono: String,
 }
 
 fn default_title_display_mode() -> String {
@@ -324,6 +330,8 @@ impl Default for HookConfig {
             toast_border: default_toast_border(),
             toast_effects: Vec::new(),
             toast_body: default_toast_body(),
+            toast_font_sans: String::new(),
+            toast_font_mono: String::new(),
         }
     }
 }
@@ -450,6 +458,14 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         toast_body: root["agent_toast"]["toast_body"]
             .as_str()
             .unwrap_or("glow")
+            .to_string(),
+        toast_font_sans: root["agent_toast"]["toast_font_sans"]
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
+        toast_font_mono: root["agent_toast"]["toast_font_mono"]
+            .as_str()
+            .unwrap_or("")
             .to_string(),
         // 나머지는 Default에서 가져오기
         ..HookConfig::default()
@@ -740,6 +756,14 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert(
         "toast_body".into(),
         Value::String(config.toast_body.clone()),
+    );
+    cn.insert(
+        "toast_font_sans".into(),
+        Value::String(config.toast_font_sans.clone()),
+    );
+    cn.insert(
+        "toast_font_mono".into(),
+        Value::String(config.toast_font_mono.clone()),
     );
     cn.insert(
         "version".into(),
@@ -1267,6 +1291,8 @@ pub struct ToastStyle {
     pub border: String,
     pub effects: Vec<String>,
     pub body: String,
+    pub font_sans: String,
+    pub font_mono: String,
 }
 
 /// settings.json 문자열에서 ToastStyle 추출 — 누락/실패 시 기본값.
@@ -1277,6 +1303,8 @@ fn toast_style_from_json(content: &str) -> ToastStyle {
         border: config.toast_border,
         effects: config.toast_effects,
         body: config.toast_body,
+        font_sans: config.toast_font_sans,
+        font_mono: config.toast_font_mono,
     }
 }
 
@@ -1680,6 +1708,19 @@ mod tests {
         assert_eq!(style.body, "flat");
     }
 
+    #[test]
+    fn toast_style_carries_fonts() {
+        let json = r#"{
+            "agent_toast": {
+                "toast_font_sans": "Nanum Gothic",
+                "toast_font_mono": "Consolas"
+            }
+        }"#;
+        let style = toast_style_from_json(json);
+        assert_eq!(style.font_sans, "Nanum Gothic");
+        assert_eq!(style.font_mono, "Consolas");
+    }
+
     /// agent_toast 섹션에 toast_* 키가 없으면 기본값 (현재 디자인과 동일 조합)
     #[test]
     fn parse_toast_style_defaults_when_missing() {
@@ -1734,6 +1775,27 @@ mod tests {
         assert_eq!(parsed.toast_border, "accent");
         assert_eq!(parsed.toast_effects, vec!["pulse", "shimmer"]);
         assert_eq!(parsed.toast_body, "flat");
+    }
+
+    #[test]
+    fn parse_toast_fonts_explicit() {
+        let json = r#"{
+            "agent_toast": {
+                "toast_font_sans": "Nanum Gothic",
+                "toast_font_mono": "Consolas"
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert_eq!(config.toast_font_sans, "Nanum Gothic");
+        assert_eq!(config.toast_font_mono, "Consolas");
+    }
+
+    #[test]
+    fn parse_toast_fonts_default_empty() {
+        let json = r#"{ "agent_toast": {} }"#;
+        let config = parse_hook_config_from_json(json);
+        assert_eq!(config.toast_font_sans, "");
+        assert_eq!(config.toast_font_mono, "");
     }
 
     #[test]

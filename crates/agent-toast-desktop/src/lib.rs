@@ -1,5 +1,6 @@
 mod changelog;
 pub mod cli;
+mod fonts;
 pub mod http_server;
 mod notification;
 pub mod pipe;
@@ -201,7 +202,7 @@ fn activate_source(hwnd: isize, id: String, app: AppHandle) {
 }
 
 #[tauri::command]
-fn test_notification(app: AppHandle) {
+fn test_notification(app: AppHandle, title: Option<String>, message: Option<String>) {
     log::debug!("[TEST] test_notification command called");
     let state = app.state::<NotificationManagerState>().inner().clone();
     let locale = setup::read_locale();
@@ -221,8 +222,8 @@ fn test_notification(app: AppHandle) {
     let req = NotifyRequest {
         pid: 0,
         event: event.to_string(),
-        message: Some(test_msg.to_string()),
-        title_hint: Some(test_title.to_string()),
+        message: Some(message.unwrap_or_else(|| test_msg.to_string())),
+        title_hint: Some(title.unwrap_or_else(|| test_title.to_string())),
         process_tree: Some(vec![]),
         source: "claude".into(),
         hostname: None,
@@ -387,6 +388,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::open_settings_file,
             setup::is_hook_config_saved,
             setup::get_toast_style,
+            fonts::list_system_fonts,
             get_monitor_list,
             get_tailscale_hostname,
             updater::mark_update_pending,
