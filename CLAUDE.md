@@ -35,6 +35,8 @@ pnpm vue-tsc --noEmit                                      # Type check only
 
 On push/PR to `master`, the `check.yml` workflow runs on `windows-latest`: `cargo fmt --check --all`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, `pnpm vue-tsc --noEmit`. A second `check-send-linux` job on `ubuntu-latest` verifies `agent-toast-send` builds for `x86_64-unknown-linux-musl` and runs the `agent-toast-send` / `agent-toast-core` tests on Linux. All must pass before merge.
 
+`release.yml` runs on `v*` tag push (or manual `workflow_dispatch`): builds the signed updater artifacts and publishes a GitHub Release. The release body's changelog is delimited by `<!-- changelog:start -->` / `<!-- changelog:end -->` markers, which the in-app updater (`changelog.rs`) extracts to show "what's new".
+
 ## Architecture
 
 **Single-instance Tauri v2 desktop app** for Windows that shows smart notifications for Claude Code events.
@@ -45,6 +47,7 @@ On push/PR to `master`, the `check.yml` workflow runs on `windows-latest`: `carg
 - Subsequent invocations: connects to pipe `\\.\pipe\agent-toast`, sends JSON, exits immediately
 - No args or `--daemon`: starts app without initial notification
 - Singleton enforced via `CreateMutexW("agent-toast-singleton")`
+- **Dev/prod coexist**: debug builds (`cfg(debug_assertions)`) use `-dev`-suffixed names — mutex `agent-toast-singleton-dev` and pipe `\\.\pipe\agent-toast-dev` — so a dev instance runs alongside an installed production one. Dev builds also show a "DEV" badge on the taskbar/tray icon, title, and tooltip.
 
 ### Backend ↔ Frontend IPC
 
@@ -68,7 +71,8 @@ crates/
     src/dynamic.rs                  # --dynamic: derive toast body from hook stdin JSON (tool_input.description → last_assistant_message → static --message)
   agent-toast-desktop/              # Windows-only Tauri app (was src-tauri/)
     src/main.rs, lib.rs, cli.rs, pipe.rs, http_server.rs,
-    notification.rs, win32.rs, setup.rs, sound.rs, updater.rs
+    notification.rs, win32.rs, setup.rs, sound.rs, updater.rs,
+    changelog.rs, fonts.rs
     tauri.conf.json, tauri.release.conf.json, icons/, capabilities/
   agent-toast-send/                 # cross-platform CLI for remote Linux servers
     src/main.rs                     # send / init / uninstall subcommands
@@ -89,7 +93,9 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 | `win32.rs`        | Process tree walking, focus detection, window activation (Windows-only)                             |
 | `setup.rs`        | Settings file I/O (`~/.claude/settings.json`), hook config builder (delegates JSON merge to core)   |
 | `sound.rs`        | System notification sound via `PlaySoundW`                                                          |
-| `updater.rs`      | Auto-update check via GitHub API (12-hour interval), update notification                            |
+| `updater.rs`      | Auto-update check via GitHub API (`CHECK_INTERVAL_MINUTES = 60`, i.e. hourly; 24h snooze), update notification with snooze/dedupe/sticky |
+| `changelog.rs`    | Extracts changelog from release body markers; `ReleaseInfo` payload sent to frontend                |
+| `fonts.rs`        | Enumerates installed system fonts via GDI `EnumFontFamiliesExW` for the toast font picker           |
 
 ### Critical Win32 Logic
 
@@ -110,15 +116,19 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 
 | File                             | Purpose                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------ |
-| `App.vue`                        | Notification window UI — event-type color coding, auto-dismiss progress bar, inline markdown body (markdown-it, escaped), light/dark theme |
-| `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / howto / about) |
+| `App.vue`                        | Notification window shell — auto-dismiss progress bar, dynamic window height, light/dark theme; delegates card rendering to `ToastCard.vue` |
+| `components/ToastCard.vue`       | The toast card itself — event-type color coding, inline markdown body (markdown-it, escaped), Claude/OpenAI logo, applies `ToastStyle` (font + design) |
+| `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / design / howto / about) |
 | `components/GeneralSettings.vue` | Position, auto-dismiss, sound settings                                         |
 | `components/HookSettings.vue`    | Per-event hook enable/message config for 15 Claude Code hook events            |
 | `components/RemoteSettings.vue`  | Remote HTTP receiver settings + `agent-toast-send` setup guide                 |
+| `components/DesignSettings.vue`  | Toast appearance — sans/mono system-font picker (`ToastStyle`), bundled D2Coding, live preview |
 | `components/HowtoSettings.vue`   | Usage guide tab                                                                |
 | `components/AboutSettings.vue`   | About tab with version info and links                                          |
+| `components/SlidingTabs.vue`     | Animated tab switcher used by `Setup.vue`                                      |
+| `components/CodeBlock.vue`       | Syntax-highlighted code block used in the howto/setup guides                   |
 | `i18n.ts`                        | vue-i18n setup — locale strings live in `src/locales/{ko,en}.json`             |
-| `types.ts`                       | Shared TypeScript interfaces (`HookConfig`, `NotificationData`, etc.)          |
+| `types.ts`                       | Shared TypeScript interfaces (`HookConfig`, `NotificationData`, `ToastStyle`, etc.) |
 
 ## CLI Usage
 
