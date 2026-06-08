@@ -2,6 +2,7 @@ use crate::cli::NotifyRequest;
 use crate::win32;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::window::Color;
@@ -84,6 +85,7 @@ fn default_show_hostname() -> bool {
 
 pub struct NotificationManager {
     notifications: Vec<NotificationData>,
+    heights: HashMap<String, f64>,
     counter: u32,
 }
 
@@ -97,6 +99,7 @@ impl NotificationManager {
     pub fn new() -> Self {
         Self {
             notifications: Vec::new(),
+            heights: HashMap::new(),
             counter: 0,
         }
     }
@@ -237,15 +240,20 @@ pub fn show_notification(
     // Calculate position: stack from bottom-right
     let index = mgr.notifications.len();
     mgr.notifications.push(data.clone());
+    let y_offset = cumulative_offset(&mgr.notifications, &mgr.heights, index);
     drop(mgr);
-
-    let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
 
     // Create notification window
     {
         let position = crate::setup::load_notification_position();
         let monitor = crate::setup::load_notification_monitor();
-        let (x, y) = calculate_notification_position(app, &position, &monitor, y_offset);
+        let (x, y) = calculate_notification_position(
+            app,
+            &position,
+            &monitor,
+            y_offset,
+            NOTIFICATION_HEIGHT,
+        );
 
         let window = WebviewWindowBuilder::new(app, &id, WebviewUrl::App("index.html".into()))
             .title("Agent Toast")
@@ -259,6 +267,7 @@ pub fn show_notification(
             .resizable(false)
             .skip_taskbar(true)
             .focused(false)
+            .visible(false)
             .build();
 
         match window {
@@ -285,12 +294,25 @@ pub fn show_notification(
                         }
                     }
                 });
+                // 폴백: 400ms 내 resize_notify가 안 오면 기본 높이로 표시 (프론트 실패 대비)
+                let fallback_label = id.clone();
+                let fallback_app = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    if let Some(win) = fallback_app.get_webview_window(&fallback_label) {
+                        // 쿼리 실패 = 창이 이미 파괴됨 → show() 건너뛰는 게 맞음
+                        if !win.is_visible().unwrap_or(true) {
+                            let _ = win.show();
+                        }
+                    }
+                });
             }
             Err(e) => {
                 log::debug!("[NOTIFY] Window creation FAILED: id={}, err={}", id, e);
-                // Rollback: remove from notifications list
+                // Rollback: remove from notifications list (and any height entry)
                 let mut mgr = state.lock().unwrap();
                 mgr.notifications.retain(|n| n.id != id);
+                mgr.heights.remove(&id);
             }
         }
     }
@@ -300,7 +322,9 @@ pub fn close_notification(app: &AppHandle, state: &NotificationManagerState, id:
     log::debug!("[DEBUG] close_notification called: id={}", id);
     let mut mgr = state.lock().unwrap();
     mgr.notifications.retain(|n| n.id != id);
+    mgr.heights.remove(id);
     let remaining: Vec<NotificationData> = mgr.notifications.clone();
+    let heights = mgr.heights.clone();
     drop(mgr);
 
     // Close the window
@@ -315,23 +339,60 @@ pub fn close_notification(app: &AppHandle, state: &NotificationManagerState, id:
     }
 
     // Reposition remaining notifications
-    reposition_notifications(app, &remaining);
+    reposition_notifications(app, &remaining, &heights);
 }
 
 pub fn reposition_all(app: &AppHandle, state: &NotificationManagerState) {
     let mgr = state.lock().unwrap();
     let notifications: Vec<NotificationData> = mgr.notifications.clone();
+    let heights = mgr.heights.clone();
     drop(mgr);
-    reposition_notifications(app, &notifications);
+    reposition_notifications(app, &notifications, &heights);
 }
 
-fn reposition_notifications(app: &AppHandle, notifications: &[NotificationData]) {
+/// 프론트 측정 높이를 받아 창 크기·위치를 확정하고 표시한다.
+pub fn resize_notification(
+    app: &AppHandle,
+    state: &NotificationManagerState,
+    id: &str,
+    height: f64,
+) {
+    let (notifications, heights) = {
+        let mut mgr = state.lock().unwrap();
+        // 이미 닫힌 알림이면 무시
+        if !mgr.notifications.iter().any(|n| n.id == id) {
+            return;
+        }
+        mgr.heights.insert(id.to_string(), height);
+        (mgr.notifications.clone(), mgr.heights.clone())
+    };
+
+    // 표시 전에 크기·위치를 모두 확정해야 함 (특히 bottom 앵커: 기본 140 기준 y로
+    // 생성됐으므로, 측정 높이로 키운 뒤 reposition 으로 위치를 다시 잡고 나서 show).
+    if let Some(win) = app.get_webview_window(id) {
+        let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+            NOTIFICATION_WIDTH,
+            height,
+        )));
+    }
+    reposition_notifications(app, &notifications, &heights);
+    if let Some(win) = app.get_webview_window(id) {
+        let _ = win.show();
+    }
+}
+
+fn reposition_notifications(
+    app: &AppHandle,
+    notifications: &[NotificationData],
+    heights: &HashMap<String, f64>,
+) {
     let position = crate::setup::load_notification_position();
     let monitor = crate::setup::load_notification_monitor();
 
     for (i, n) in notifications.iter().enumerate() {
-        let y_offset = (i as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
-        let (x, y) = calculate_notification_position(app, &position, &monitor, y_offset);
+        let y_offset = cumulative_offset(notifications, heights, i);
+        let h = heights.get(&n.id).copied().unwrap_or(NOTIFICATION_HEIGHT);
+        let (x, y) = calculate_notification_position(app, &position, &monitor, y_offset, h);
 
         if let Some(win) = app.get_webview_window(&n.id) {
             let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
@@ -339,11 +400,29 @@ fn reposition_notifications(app: &AppHandle, notifications: &[NotificationData])
     }
 }
 
+/// `index` 앞에 쌓인 모든 알림의 (높이 + 여백) 합.
+/// 아직 측정되지 않은 알림은 `NOTIFICATION_HEIGHT` 기본값을 쓴다.
+fn cumulative_offset(
+    notifications: &[NotificationData],
+    heights: &HashMap<String, f64>,
+    index: usize,
+) -> f64 {
+    notifications
+        .iter()
+        .take(index)
+        .map(|n| heights.get(&n.id).copied().unwrap_or(NOTIFICATION_HEIGHT) + NOTIFICATION_MARGIN)
+        .sum()
+}
+
+/// `height` is this window's OWN height — it drives the bottom-edge anchor and
+/// the overflow clamp. Callers must recompute the position after a window's
+/// height is measured (see `reposition_all` from the resize path).
 fn calculate_notification_position(
     app: &AppHandle,
     position: &str,
     monitor_value: &str,
     y_offset: f64,
+    height: f64,
 ) -> (f64, f64) {
     let (wa_x, wa_y, wa_w, wa_h) = win32::get_monitor_work_area(monitor_value);
 
@@ -371,10 +450,30 @@ fn calculate_notification_position(
     let logical_w = wa_w / scale;
     let logical_h = wa_h / scale;
 
-    // Stack notifications, clamping to just off-screen when overflowing
-    // This prevents Windows from repositioning to weird locations on negative coordinates
-    let min_y = logical_y - NOTIFICATION_HEIGHT - NOTIFICATION_MARGIN;
-    let max_y = logical_y + logical_h + NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN;
+    position_in_work_area(
+        position, logical_x, logical_y, logical_w, logical_h, y_offset, height,
+    )
+}
+
+/// Pure coordinate math: given a logical-pixel work area, the stacking
+/// `y_offset`, and the window's own `height`, return the top-left `(x, y)`.
+///
+/// Split out from `calculate_notification_position` (which does the monitor
+/// lookup + DPI scaling) so the corner anchoring, height-based bottom anchor,
+/// and off-screen clamping can be unit-tested without a live window.
+fn position_in_work_area(
+    position: &str,
+    logical_x: f64,
+    logical_y: f64,
+    logical_w: f64,
+    logical_h: f64,
+    y_offset: f64,
+    height: f64,
+) -> (f64, f64) {
+    // Stack notifications, clamping to just off-screen when overflowing.
+    // This prevents Windows from repositioning to weird locations on negative coordinates.
+    let min_y = logical_y - height - NOTIFICATION_MARGIN;
+    let max_y = logical_y + logical_h + height + NOTIFICATION_MARGIN;
 
     match position {
         "top_left" => {
@@ -389,15 +488,13 @@ fn calculate_notification_position(
         }
         "bottom_left" => {
             let x = logical_x + NOTIFICATION_MARGIN;
-            let y = (logical_y + logical_h - NOTIFICATION_HEIGHT - NOTIFICATION_MARGIN - y_offset)
-                .max(min_y);
+            let y = (logical_y + logical_h - height - NOTIFICATION_MARGIN - y_offset).max(min_y);
             (x, y)
         }
         _ => {
             // bottom_right (default)
             let x = logical_x + logical_w - NOTIFICATION_WIDTH - NOTIFICATION_MARGIN;
-            let y = (logical_y + logical_h - NOTIFICATION_HEIGHT - NOTIFICATION_MARGIN - y_offset)
-                .max(min_y);
+            let y = (logical_y + logical_h - height - NOTIFICATION_MARGIN - y_offset).max(min_y);
             (x, y)
         }
     }
@@ -465,6 +562,153 @@ pub fn on_foreground_changed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn nd(id: &str) -> NotificationData {
+        NotificationData {
+            id: id.to_string(),
+            window_title: String::new(),
+            event_display: String::new(),
+            message: None,
+            source_hwnd: 0,
+            process_tree: vec![],
+            auto_dismiss_seconds: 0,
+            source: String::new(),
+            hostname: None,
+            show_hostname: false,
+        }
+    }
+
+    #[test]
+    fn cumulative_offset_first_item_is_zero() {
+        let notifs = vec![nd("a"), nd("b")];
+        let heights = HashMap::new();
+        assert!((cumulative_offset(&notifs, &heights, 0) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn cumulative_offset_uses_default_when_unmeasured() {
+        let notifs = vec![nd("a"), nd("b"), nd("c")];
+        let heights = HashMap::new();
+        let expected = 2.0 * (140.0 + 10.0); // 앞 2개가 기본 140 + 여백 10
+        assert!((cumulative_offset(&notifs, &heights, 2) - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn cumulative_offset_mixed_heights() {
+        let notifs = vec![nd("a"), nd("b"), nd("c")];
+        let mut heights = HashMap::new();
+        heights.insert("a".to_string(), 140.0);
+        heights.insert("b".to_string(), 180.0);
+        let expected = (140.0 + 10.0) + (180.0 + 10.0);
+        assert!((cumulative_offset(&notifs, &heights, 2) - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn cumulative_offset_partial_measured_falls_back() {
+        let notifs = vec![nd("a"), nd("b"), nd("c")];
+        let mut heights = HashMap::new();
+        heights.insert("b".to_string(), 200.0); // a=미측정, b=측정, c=범위 밖
+        let expected = (140.0 + 10.0) // a: 미측정 → 기본 140
+            + (200.0 + 10.0); // b: 측정값 200
+        assert!((cumulative_offset(&notifs, &heights, 2) - expected).abs() < 0.001);
+    }
+
+    // ── 위치 계산 (position_in_work_area) ──
+    // 기준 작업영역: 원점 (0,0), 1920x1040 논리 픽셀. WIDTH=380, MARGIN=10, 기본 HEIGHT=140.
+
+    fn approx(a: (f64, f64), b: (f64, f64)) {
+        assert!(
+            (a.0 - b.0).abs() < 0.001 && (a.1 - b.1).abs() < 0.001,
+            "got {:?}, expected {:?}",
+            a,
+            b
+        );
+    }
+
+    #[test]
+    fn position_top_left_first_item() {
+        // x = 0 + MARGIN, y = 0 + MARGIN + 0
+        approx(
+            position_in_work_area("top_left", 0.0, 0.0, 1920.0, 1040.0, 0.0, 140.0),
+            (10.0, 10.0),
+        );
+    }
+
+    #[test]
+    fn position_top_right_first_item() {
+        // x = 0 + 1920 - 380 - 10 = 1530, y = 10
+        approx(
+            position_in_work_area("top_right", 0.0, 0.0, 1920.0, 1040.0, 0.0, 140.0),
+            (1530.0, 10.0),
+        );
+    }
+
+    #[test]
+    fn position_bottom_left_first_item() {
+        // x = 10, y = 1040 - 140 - 10 - 0 = 890
+        approx(
+            position_in_work_area("bottom_left", 0.0, 0.0, 1920.0, 1040.0, 0.0, 140.0),
+            (10.0, 890.0),
+        );
+    }
+
+    #[test]
+    fn position_bottom_right_first_item() {
+        // x = 1530, y = 890
+        approx(
+            position_in_work_area("bottom_right", 0.0, 0.0, 1920.0, 1040.0, 0.0, 140.0),
+            (1530.0, 890.0),
+        );
+    }
+
+    #[test]
+    fn position_unknown_falls_back_to_bottom_right() {
+        // 알 수 없는 문자열은 bottom_right(기본)와 동일해야 함
+        let a = position_in_work_area("garbage", 0.0, 0.0, 1920.0, 1040.0, 0.0, 140.0);
+        let b = position_in_work_area("bottom_right", 0.0, 0.0, 1920.0, 1040.0, 0.0, 140.0);
+        approx(a, b);
+    }
+
+    #[test]
+    fn position_bottom_right_stacked_offset() {
+        // y_offset=150 만큼 위로 쌓임: y = 1040 - 140 - 10 - 150 = 740
+        approx(
+            position_in_work_area("bottom_right", 0.0, 0.0, 1920.0, 1040.0, 150.0, 140.0),
+            (1530.0, 740.0),
+        );
+    }
+
+    #[test]
+    fn position_bottom_anchor_uses_own_height() {
+        // 더 높은 창은 하단 정렬되어 y가 더 작아짐: y = 1040 - 200 - 10 = 830 (< 140일 때의 890)
+        approx(
+            position_in_work_area("bottom_right", 0.0, 0.0, 1920.0, 1040.0, 0.0, 200.0),
+            (1530.0, 830.0),
+        );
+    }
+
+    #[test]
+    fn position_top_overflow_clamped_to_max_y() {
+        // 큰 y_offset이 화면 아래로 넘치면 max_y = 0 + 1040 + 140 + 10 = 1190 으로 클램프
+        let (_, y) = position_in_work_area("top_left", 0.0, 0.0, 1920.0, 1040.0, 5000.0, 140.0);
+        assert!((y - 1190.0).abs() < 0.001, "y={}", y);
+    }
+
+    #[test]
+    fn position_bottom_overflow_clamped_to_min_y() {
+        // 큰 y_offset이 화면 위로 넘치면 min_y = 0 - 140 - 10 = -150 으로 클램프
+        let (_, y) = position_in_work_area("bottom_right", 0.0, 0.0, 1920.0, 1040.0, 5000.0, 140.0);
+        assert!((y - (-150.0)).abs() < 0.001, "y={}", y);
+    }
+
+    #[test]
+    fn position_respects_work_area_origin() {
+        // 보조 모니터처럼 원점이 (1920, 0)인 작업영역: top_left x = 1920 + MARGIN
+        approx(
+            position_in_work_area("top_left", 1920.0, 0.0, 1920.0, 1040.0, 0.0, 140.0),
+            (1930.0, 10.0),
+        );
+    }
 
     // ── NotificationData tests ──
 
@@ -648,24 +892,6 @@ mod tests {
         assert!(second.is_some());
         assert_eq!(second.unwrap().window_title, "Second");
         assert!(third.is_none());
-    }
-
-    // ── Stacking calculation tests ──
-
-    #[test]
-    fn notification_stack_offset_calculation() {
-        // y_offset 계산 검증: index * (height + margin)
-        let index = 2;
-        let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
-        let expected = 2.0 * (140.0 + 10.0);
-        assert!((y_offset - expected).abs() < 0.001);
-    }
-
-    #[test]
-    fn notification_stack_first_item_no_offset() {
-        let index = 0;
-        let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
-        assert!((y_offset - 0.0).abs() < 0.001);
     }
 
     // ── NotificationManager counter tests ──
@@ -869,23 +1095,6 @@ mod tests {
         assert!(result.is_some());
     }
 
-    // ── Stacking calculation additional tests ──
-
-    #[test]
-    fn notification_stack_many_items() {
-        for index in 0..20 {
-            let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
-            let expected = (index as f64) * 150.0; // 140 + 10
-            assert!(
-                (y_offset - expected).abs() < 0.001,
-                "index={}, y_offset={}, expected={}",
-                index,
-                y_offset,
-                expected
-            );
-        }
-    }
-
     // ── NotificationData Debug trait ──
 
     #[test]
@@ -1070,15 +1279,6 @@ mod tests {
             let id = format!("notify-{}", mgr.counter);
             assert_eq!(id, format!("notify-{}", u32::MAX));
         }
-    }
-
-    #[test]
-    fn notification_stack_offset_large_index() {
-        // 100개 스택 시 오프셋 계산
-        let index = 99;
-        let y_offset = (index as f64) * (NOTIFICATION_HEIGHT + NOTIFICATION_MARGIN);
-        let expected = 99.0 * 150.0;
-        assert!((y_offset - expected).abs() < 0.001);
     }
 
     #[test]

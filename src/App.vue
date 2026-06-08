@@ -4,7 +4,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import ToastCard from "./components/ToastCard.vue";
 import type { NotificationData, ToastStyle } from "./types";
@@ -16,6 +16,30 @@ const show = ref(false);
 const isDevMode = ref(false);
 const dismissActive = ref(false);
 const dismissPaused = ref(false);
+const rootRef = ref<HTMLElement | null>(null);
+let resizeObserver: ResizeObserver | null = null;
+
+async function measureAndResize() {
+  const id = notification.value?.id;
+  const el = rootRef.value;
+  if (!id || !el) return;
+  const height = Math.ceil(el.offsetHeight);
+  if (height <= 0) return;
+  try {
+    await invoke("resize_notify", { id, height });
+  } catch (e) {
+    // 실패해도 400ms 폴백이 창을 표시함. 개발 중에는 원인 노출
+    if (import.meta.env.DEV) console.warn("[resize_notify]", e);
+  }
+}
+
+function setupResizeObserver() {
+  if (resizeObserver || !rootRef.value) return;
+  resizeObserver = new ResizeObserver(() => {
+    void measureAndResize();
+  });
+  resizeObserver.observe(rootRef.value);
+}
 const toastStyle = ref<ToastStyle>({
   bar: "left",
   border: "subtle",
@@ -103,6 +127,9 @@ onMounted(async () => {
   if (data) {
     notification.value = data;
     showNotification();
+    await nextTick();
+    void measureAndResize();
+    setupResizeObserver();
   }
 
   getCurrentWebviewWindow().listen<NotificationData>(
@@ -110,6 +137,10 @@ onMounted(async () => {
     (event) => {
       notification.value = event.payload;
       showNotification();
+      void nextTick().then(() => {
+        void measureAndResize();
+        setupResizeObserver();
+      });
     },
   );
 });
@@ -170,21 +201,28 @@ async function onClose() {
     await invoke("close_notify", { id: closeId });
   }, 300);
 }
+
+onUnmounted(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
 </script>
 
 <template>
-  <ToastCard
-    v-if="notification"
-    class="h-screen"
-    :notification="notification"
-    :toast-style="toastStyle"
-    :show="show"
-    :dismiss-active="dismissActive"
-    :dismiss-paused="dismissPaused"
-    :is-dev-mode="isDevMode"
-    @view="onView"
-    @close="onClose"
-    @mouseenter="pauseDismiss"
-    @mouseleave="resumeDismiss"
-  />
+  <!-- 높이 클래스(h-*)를 절대 추가하지 말 것: 래퍼 높이는 콘텐츠가 결정해야 하며,
+       고정 높이를 주면 창 리사이즈 → 측정 → 리사이즈의 ResizeObserver 무한 루프가 발생함 -->
+  <div v-if="notification" ref="rootRef" class="w-screen">
+    <ToastCard
+      :notification="notification"
+      :toast-style="toastStyle"
+      :show="show"
+      :dismiss-active="dismissActive"
+      :dismiss-paused="dismissPaused"
+      :is-dev-mode="isDevMode"
+      @view="onView"
+      @close="onClose"
+      @mouseenter="pauseDismiss"
+      @mouseleave="resumeDismiss"
+    />
+  </div>
 </template>

@@ -244,7 +244,7 @@ const ringShadow = computed(() => {
 
     <!-- Content -->
     <div
-      class="relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-[var(--toast-text-shadow)]"
+      class="relative z-10 flex-1 flex flex-col p-3 min-w-0 text-shadow-[var(--toast-text-shadow)]"
     >
       <!-- Dismiss progress -->
       <div
@@ -306,7 +306,7 @@ const ringShadow = computed(() => {
       </div>
 
       <!-- Body -->
-      <div class="flex flex-col gap-0.5 min-w-0">
+      <div class="flex flex-col gap-1 min-w-0 mt-1.5">
         <div class="text-[14px] font-bold text-toast-fg truncate leading-snug">
           {{ truncate(notification.window_title) }}
           <span
@@ -325,7 +325,7 @@ const ringShadow = computed(() => {
       </div>
 
       <!-- Actions -->
-      <div class="flex gap-1.5">
+      <div class="flex gap-1.5 mt-2.5">
         <button
           v-if="!isRemote || isUpdateAvailable"
           class="flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-semibold rounded-md border transition-colors"

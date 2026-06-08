@@ -182,6 +182,12 @@ fn close_notify(id: String, app: AppHandle) {
 }
 
 #[tauri::command]
+fn resize_notify(id: String, height: f64, app: AppHandle) {
+    let state = app.state::<NotificationManagerState>();
+    notification::resize_notification(&app, &state, &id, height);
+}
+
+#[tauri::command]
 fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
     if hwnd != 0 {
@@ -351,6 +357,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         .manage(http_state)
         .invoke_handler(tauri::generate_handler![
             close_notify,
+            resize_notify,
             activate_source,
             get_notification_data,
             test_notification,
