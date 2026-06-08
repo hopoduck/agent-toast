@@ -1,0 +1,33 @@
+# git cliff 설정 — https://git-cliff.org/docs/configuration
+[changelog]
+# 버전/날짜 헤더 없이 그룹 본문만 출력 (GitHub가 버전·날짜 메타를 따로 제공)
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}
+{%- endfor %}
+{% endfor %}"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+# 그룹 라벨: 출력 시 group_by가 라벨 문자열을 그대로 사용
+commit_parsers = [
+    { message = "^feat", group = "✨ 새로운 기능" },
+    { message = "^fix", group = "🐛 버그 수정" },
+    { message = "^perf", group = "⚡ 성능 개선" },
+    { message = "^refactor", group = "♻️ 리팩터링" },
+    { message = "^docs", group = "📝 문서" },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^chore: release", skip = true },
+    { message = "^(chore|build|ci)", group = "🔧 기타" },
+    { message = ".*", skip = true },
+]
+filter_commits = true
+tag_pattern = "v[0-9]*"
+sort_commits = "newest"

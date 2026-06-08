@@ -177,7 +177,12 @@
     "update_error": "Update error: {msg}",
     "update_manual": "Auto-update is not available. Please download the latest version from GitHub.",
     "update_completed": "Update Complete",
-    "update_completed_message": "Updated to v{version}!"
+    "update_completed_message": "Updated to v{version}!",
+    "changelog_title": "What's New",
+    "changelog_loading": "Loading changelog...",
+    "changelog_error": "Couldn't load the changelog.",
+    "changelog_view_all": "View all releases",
+    "changelog_empty": "No changelog to show."
   },
   "remote": {
     "title": "Remote Notifications",

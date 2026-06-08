@@ -19,7 +19,13 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
+      changelog: ${{ steps.changelog.outputs.content }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Resolve tag and prerelease flag
         id: meta
         shell: bash
@@ -31,6 +37,13 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip all
 
   build-desktop:
     needs: prepare
@@ -69,7 +82,9 @@ jobs:
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: '${{ needs.prepare.outputs.tag }}'
           releaseBody: |
-            Agent Toast 업데이트입니다.
+            <!-- changelog:start -->
+            ${{ needs.prepare.outputs.changelog }}
+            <!-- changelog:end -->
 
             ## 설치 방법
             - `Agent.Toast_*_x64-setup.exe` — 설치 프로그램 (Windows)

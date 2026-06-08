@@ -1,3 +1,4 @@
+mod changelog;
 pub mod cli;
 pub mod http_server;
 mod notification;
@@ -388,7 +389,8 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::get_toast_style,
             get_monitor_list,
             get_tailscale_hostname,
-            updater::mark_update_pending
+            updater::mark_update_pending,
+            changelog::get_releases
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

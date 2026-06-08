@@ -11,11 +11,59 @@ import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast } from "vue-sonner";
 import confetti from "canvas-confetti";
+import MarkdownIt from "markdown-it";
 import logoPng from "../assets/logo.png";
 
 const { t } = useI18n();
 const version = ref("...");
 const portable = ref(false);
+
+// 변경 내역 (changelog)
+interface ReleaseInfo {
+  version: string;
+  name: string;
+  published_at: string;
+  changelog: string;
+  url: string;
+}
+
+// 블록 마크다운 렌더용 (제목/리스트 허용, html 비활성으로 XSS 차단)
+const mdFull = new MarkdownIt({ html: false, linkify: true, breaks: true });
+
+type ChangelogStatus = "loading" | "loaded" | "error";
+const changelogStatus = ref<ChangelogStatus>("loading");
+const releases = ref<ReleaseInfo[]>([]);
+const expanded = ref<Set<string>>(new Set());
+
+function toggleRelease(v: string) {
+  if (expanded.value.has(v)) expanded.value.delete(v);
+  else expanded.value.add(v);
+  // Set 변경 반응성 트리거
+  expanded.value = new Set(expanded.value);
+}
+
+function renderChangelog(text: string): string {
+  return text.trim() ? mdFull.render(text) : "";
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString();
+}
+
+async function loadReleases() {
+  changelogStatus.value = "loading";
+  try {
+    const list = await invoke<ReleaseInfo[]>("get_releases");
+    releases.value = list;
+    if (list.length > 0) expanded.value = new Set([list[0].version]);
+    changelogStatus.value = "loaded";
+  } catch {
+    changelogStatus.value = "error";
+  }
+}
 
 // Update state
 type UpdateStatus = "idle" | "checking" | "available" | "up-to-date" | "downloading" | "ready";
@@ -124,13 +172,14 @@ function onStarClick(e: MouseEvent) {
 onMounted(async () => {
   version.value = await getVersion();
   portable.value = await invoke<boolean>("is_portable");
+  loadReleases();
 });
 </script>
 
 <template>
   <div class="flex flex-1 min-h-0 flex-col gap-5 overflow-y-auto">
     <!-- Header with Logo -->
-    <div class="anim-item flex items-center gap-4" style="animation-delay:0ms">
+    <div class="anim-item shrink-0 flex items-center gap-4" style="animation-delay:0ms">
       <img :src="logoPng" width="56" height="56" alt="Agent Toast" class="rounded-xl shadow-sm" />
       <div class="flex flex-col gap-1">
         <h2 class="text-2xl font-bold text-foreground m-0">Agent Toast</h2>
@@ -151,10 +200,10 @@ onMounted(async () => {
       </div>
     </div>
 
-    <p class="anim-item text-sm text-muted-foreground leading-relaxed m-0" style="animation-delay:50ms">{{ t('about.description') }}</p>
+    <p class="anim-item shrink-0 text-sm text-muted-foreground leading-relaxed m-0" style="animation-delay:50ms">{{ t('about.description') }}</p>
 
     <!-- Update Section -->
-    <div class="anim-item flex flex-col gap-2" style="animation-delay:100ms">
+    <div class="anim-item shrink-0 flex flex-col gap-2" style="animation-delay:100ms">
       <!-- Status message -->
       <span
         v-if="statusMessage"
@@ -201,7 +250,7 @@ onMounted(async () => {
 
     <!-- Star Request -->
     <button
-      class="anim-item star-cta group relative overflow-hidden rounded-xl border border-primary/15 dark:border-primary/20 p-[1px] transition-all duration-300 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 text-left w-full cursor-pointer bg-transparent"
+      class="anim-item shrink-0 star-cta group relative overflow-hidden rounded-xl border border-primary/15 dark:border-primary/20 p-[1px] transition-all duration-300 hover:border-primary/30 hover:shadow-md hover:shadow-primary/5 text-left w-full cursor-pointer bg-transparent"
       style="animation-delay:150ms"
       @click="onStarClick"
     >
@@ -226,9 +275,107 @@ onMounted(async () => {
       </div>
     </button>
 
+    <!-- Changelog -->
+    <div class="anim-item shrink-0 flex flex-col gap-3" style="animation-delay:175ms">
+      <h3 class="text-sm font-semibold text-foreground m-0">{{ t('about.changelog_title') }}</h3>
+
+      <!-- 로딩 -->
+      <div v-if="changelogStatus === 'loading'" class="flex items-center gap-2 text-sm text-muted-foreground">
+        <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        {{ t('about.changelog_loading') }}
+      </div>
+
+      <!-- 에러 -->
+      <div v-else-if="changelogStatus === 'error'" class="flex flex-col gap-2">
+        <span class="text-sm text-muted-foreground">{{ t('about.changelog_error') }}</span>
+        <a
+          href="https://github.com/hopoduck/agent-toast/releases"
+          target="_blank"
+          class="text-sm text-primary hover:underline"
+        >{{ t('about.changelog_view_all') }}</a>
+      </div>
+
+      <!-- 비어있음 -->
+      <span v-else-if="releases.length === 0" class="text-sm text-muted-foreground">
+        {{ t('about.changelog_empty') }}
+      </span>
+
+      <!-- 릴리즈 목록 (아코디언) -->
+      <div v-else class="flex flex-col gap-1.5">
+        <div
+          v-for="rel in releases"
+          :key="rel.version"
+          class="rounded-lg border border-border/60 overflow-hidden"
+        >
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left bg-transparent hover:bg-muted/40 transition-colors cursor-pointer"
+            @click="toggleRelease(rel.version)"
+          >
+            <span class="flex items-center gap-2 min-w-0">
+              <span class="text-sm font-medium text-foreground truncate">{{ rel.name }}</span>
+              <span v-if="formatDate(rel.published_at)" class="text-xs text-muted-foreground/70 shrink-0">
+                {{ formatDate(rel.published_at) }}
+              </span>
+            </span>
+            <svg
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+              class="shrink-0 text-muted-foreground transition-transform duration-200"
+              :class="{ 'rotate-180': expanded.has(rel.version) }"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          <div
+            v-if="expanded.has(rel.version)"
+            class="changelog-body px-3 pb-3 pt-1 text-sm text-muted-foreground leading-relaxed"
+            v-html="renderChangelog(rel.changelog)"
+          ></div>
+        </div>
+        <a
+          href="https://github.com/hopoduck/agent-toast/releases"
+          target="_blank"
+          class="text-xs text-muted-foreground/70 hover:text-primary transition-colors mt-1"
+        >{{ t('about.changelog_view_all') }}</a>
+      </div>
+    </div>
+
     <!-- Footer -->
-    <div class="anim-item mt-auto pt-2" style="animation-delay:200ms">
+    <div class="anim-item shrink-0 mt-auto pt-2" style="animation-delay:200ms">
       <p class="text-xs text-muted-foreground/50 m-0">{{ t('about.made_with') }}</p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.changelog-body :deep(ul) {
+  list-style: disc;
+  padding-left: 1.1rem;
+  margin: 0.25rem 0;
+}
+.changelog-body :deep(li) {
+  margin: 0.1rem 0;
+}
+.changelog-body :deep(h1),
+.changelog-body :deep(h2),
+.changelog-body :deep(h3) {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+  color: var(--foreground, currentColor);
+}
+.changelog-body :deep(a) {
+  color: var(--primary, #ff9a3c);
+  text-decoration: underline;
+}
+.changelog-body :deep(code) {
+  font-size: 0.85em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  background: rgb(0 0 0 / 0.06);
+}
+</style>
