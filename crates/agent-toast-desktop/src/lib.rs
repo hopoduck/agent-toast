@@ -257,9 +257,15 @@ pub fn open_setup_window_with_tab(app: &AppHandle, tab: Option<&str>) {
     }
 
     let locale = setup::read_locale();
-    let setup_title = match locale.as_str() {
+    let setup_title_base = match locale.as_str() {
         "en" => "Agent Toast Settings",
         _ => "Agent Toast 설정",
+    };
+    // 개발모드에서는 작업표시줄에서 구분할 수 있도록 [DEV] 표식을 붙인다.
+    let setup_title = if is_dev_mode() {
+        format!("{setup_title_base} [DEV]")
+    } else {
+        setup_title_base.to_string()
     };
 
     let url = match tab {
@@ -267,12 +273,18 @@ pub fn open_setup_window_with_tab(app: &AppHandle, tab: Option<&str>) {
         None => "index.html".to_string(),
     };
 
-    let _ = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App(url.into()))
+    let mut builder = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App(url.into()))
         .title(setup_title)
         .inner_size(560.0, 720.0)
         .resizable(true)
-        .center()
-        .build();
+        .center();
+    // 개발모드에서는 작업표시줄 아이콘도 DEV 배지 버전으로 교체
+    if is_dev_mode() {
+        if let Ok(icon) = Image::from_bytes(include_bytes!("../icons/icon-dev.ico")) {
+            builder = builder.icon(icon).expect("failed to set dev window icon");
+        }
+    }
+    let _ = builder.build();
 }
 
 pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
@@ -413,14 +425,23 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             // - icon.ico는 작업표시줄용 (큰 사이즈 먼저), tray.ico는 트레이용 (작은 사이즈)
             // - 제목표시줄도 icon.ico 사용해서 해상도 깨짐 (Tauri 수정 필요)
             // - 관련 이슈: https://github.com/tauri-apps/tauri/issues/14596
-            let tray_icon_bytes = include_bytes!("../icons/tray.ico");
+            // 개발모드에서는 작업표시줄/트레이에서 한눈에 구분되도록 DEV 배지 아이콘 사용
+            let tray_icon_bytes: &[u8] = if is_dev_mode() {
+                include_bytes!("../icons/tray-dev.ico")
+            } else {
+                include_bytes!("../icons/tray.ico")
+            };
             let tray_icon = Image::from_bytes(tray_icon_bytes).expect("failed to load tray icon");
             let click_handle = tray_handle.clone();
             TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .tooltip("Agent Toast")
+                .tooltip(if is_dev_mode() {
+                    "Agent Toast [DEV]"
+                } else {
+                    "Agent Toast"
+                })
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "settings" => open_setup_window(app),
                     "restart" => app.restart(),
