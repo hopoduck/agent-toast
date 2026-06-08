@@ -392,6 +392,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             get_monitor_list,
             get_tailscale_hostname,
             updater::mark_update_pending,
+            updater::snooze_update,
             changelog::get_releases
         ])
         .setup(move |app| {
@@ -502,8 +503,18 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             // Check if update was just completed
             updater::check_update_completed(&handle, &state);
 
-            // Check for updates in background
+            // Check for updates in background (once at startup)
             updater::check_for_updates(&handle, &state);
+
+            // Re-check periodically so a long-running app still notices new releases
+            {
+                let timer_handle = handle.clone();
+                let timer_state = state.clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(60 * 60));
+                    updater::check_for_updates(&timer_handle, &timer_state);
+                });
+            }
 
             Ok(())
         })

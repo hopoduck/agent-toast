@@ -197,6 +197,14 @@ async function onView() {
 async function onClose() {
   if (!notification.value) return;
   const closeId = notification.value.id;
+  // 업데이트 알림을 닫으면 해당 버전을 24시간 동안 다시 알리지 않음(스누즈)
+  if (isUpdateAvailable()) {
+    try {
+      await invoke("snooze_update");
+    } catch {
+      // 스누즈 실패해도 닫기는 진행
+    }
+  }
   show.value = false;
   currentNotificationId = null;
   setTimeout(async () => {

@@ -9,12 +9,18 @@ use tauri::AppHandle;
 use crate::cli::NotifyRequest;
 use crate::notification::{show_notification, NotificationManagerState};
 
-const CHECK_INTERVAL_HOURS: i64 = 12;
+const CHECK_INTERVAL_MINUTES: i64 = 60;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct UpdaterState {
     last_check: Option<String>,
     pending_version: Option<String>,
+    /// 마지막으로 사용자에게 보여준 update_available 버전
+    #[serde(default)]
+    snoozed_version: Option<String>,
+    /// 그 버전을 이 시각까지 다시 알리지 않음 (RFC3339). None이면 스누즈 없음.
+    #[serde(default)]
+    snooze_until: Option<String>,
 }
 
 fn get_state_path() -> Option<PathBuf> {
@@ -37,26 +43,50 @@ fn save_state(state: &UpdaterState) {
     }
 }
 
-fn should_check() -> bool {
-    let state = load_state();
-    match state.last_check {
+/// 마지막 체크 시각(`state.last_check`)과 `now`로 재체크 여부를 판정하는 순수 함수.
+/// 기록이 없거나 파싱 불가능하면 체크해야 하고, 마지막 체크 후
+/// `CHECK_INTERVAL_MINUTES` 이상 지났으면 체크한다.
+fn should_check_at(state: &UpdaterState, now: DateTime<Utc>) -> bool {
+    match &state.last_check {
         None => true,
-        Some(last) => {
-            if let Ok(last_time) = last.parse::<DateTime<Utc>>() {
-                let now = Utc::now();
-                let diff = now.signed_duration_since(last_time);
-                diff.num_hours() >= CHECK_INTERVAL_HOURS
-            } else {
-                true
+        Some(last) => match last.parse::<DateTime<Utc>>() {
+            Ok(last_time) => {
+                now.signed_duration_since(last_time).num_minutes() >= CHECK_INTERVAL_MINUTES
             }
-        }
+            Err(_) => true,
+        },
     }
+}
+
+fn should_check() -> bool {
+    should_check_at(&load_state(), Utc::now())
 }
 
 fn mark_checked() {
     let mut state = load_state();
     state.last_check = Some(Utc::now().to_rfc3339());
     save_state(&state);
+}
+
+/// `version`이 사용자가 "닫기"로 스누즈한 버전이고 스누즈 기간이 아직 안 지났으면 true.
+/// 더 높은 새 버전이 나오면(저장된 snoozed_version과 다르면) 스누즈는 무시된다.
+/// 시간·파일에 의존하지 않는 순수 함수.
+fn is_snoozed_at(state: &UpdaterState, version: &str, now: DateTime<Utc>) -> bool {
+    if state.snoozed_version.as_deref() != Some(version) {
+        return false;
+    }
+    match state
+        .snooze_until
+        .as_deref()
+        .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+    {
+        Some(until) => now < until,
+        None => false,
+    }
+}
+
+fn is_snoozed(version: &str) -> bool {
+    is_snoozed_at(&load_state(), version, Utc::now())
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +161,13 @@ pub fn check_for_updates(app: &AppHandle, state: &NotificationManagerState) {
         info!("Current: {}, Latest: {}", current_version, release.tag_name);
 
         if is_newer(&current_version, &release.tag_name) {
+            if is_snoozed(&release.tag_name) {
+                debug!(
+                    "Update {} is snoozed, skipping notification",
+                    release.tag_name
+                );
+                return;
+            }
             info!("New version available!");
             show_update_notification(&app, &state, &release.tag_name);
         } else {
@@ -140,6 +177,16 @@ pub fn check_for_updates(app: &AppHandle, state: &NotificationManagerState) {
 }
 
 fn show_update_notification(app: &AppHandle, state: &NotificationManagerState, version: &str) {
+    // 보여주는 버전을 기록한다. 이전과 다른(더 새로운) 버전이면 이전 스누즈를 해제한다.
+    {
+        let mut st = load_state();
+        if st.snoozed_version.as_deref() != Some(version) {
+            st.snoozed_version = Some(version.to_string());
+            st.snooze_until = None;
+            save_state(&st);
+        }
+    }
+
     let locale = crate::setup::read_locale();
     let message = match locale.as_str() {
         "en" => format!("Version {} is available. Click to update.", version),
@@ -168,6 +215,16 @@ pub fn mark_update_pending(version: String) {
     state.pending_version = Some(version);
     save_state(&state);
     debug!("Marked update pending");
+}
+
+/// 사용자가 업데이트 알림을 "닫기"로 닫았을 때 호출. 현재 보여준 버전을
+/// 24시간 동안 다시 알리지 않는다.
+#[tauri::command]
+pub fn snooze_update() {
+    let mut state = load_state();
+    state.snooze_until = Some((Utc::now() + chrono::Duration::hours(24)).to_rfc3339());
+    save_state(&state);
+    debug!("Update snoozed for 24h");
 }
 
 pub fn check_update_completed(app: &AppHandle, state: &NotificationManagerState) {
@@ -328,6 +385,7 @@ mod tests {
         let state = UpdaterState {
             last_check: Some("2024-01-01T12:00:00Z".to_string()),
             pending_version: Some("v1.2.3".to_string()),
+            ..Default::default()
         };
         let json = serde_json::to_string(&state).unwrap();
         let deserialized: UpdaterState = serde_json::from_str(&json).unwrap();
@@ -354,42 +412,118 @@ mod tests {
         assert!(state.pending_version.is_none());
     }
 
-    // ── Datetime parsing tests ──
+    // ── should_check_at tests (순수 함수 직접 검증) ──
 
-    #[test]
-    fn last_check_datetime_parsing() {
-        // RFC3339 형식 파싱 테스트 (should_check 내부 로직)
-        let timestamp = "2024-06-15T10:30:00Z";
-        let parsed = timestamp.parse::<DateTime<Utc>>();
-        assert!(parsed.is_ok());
+    fn at(ts: &str) -> DateTime<Utc> {
+        ts.parse::<DateTime<Utc>>().unwrap()
+    }
+
+    fn state_last_check(last: Option<&str>) -> UpdaterState {
+        UpdaterState {
+            last_check: last.map(|s| s.to_string()),
+            ..Default::default()
+        }
     }
 
     #[test]
-    fn last_check_invalid_datetime_format() {
-        // 잘못된 형식은 파싱 실패
-        let invalid = "not-a-date";
-        let parsed = invalid.parse::<DateTime<Utc>>();
-        assert!(parsed.is_err());
+    fn should_check_at_no_record() {
+        // 기록 없으면 항상 체크
+        let s = state_last_check(None);
+        assert!(should_check_at(&s, at("2024-01-01T12:00:00Z")));
     }
 
     #[test]
-    fn duration_calculation_logic() {
-        // 시간 차이 계산 로직 검증
-        let past = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let future = "2024-01-01T13:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let diff = future.signed_duration_since(past);
-        assert_eq!(diff.num_hours(), 13);
-        assert!(diff.num_hours() >= CHECK_INTERVAL_HOURS);
+    fn should_check_at_invalid_timestamp() {
+        // 파싱 불가능한 기록이면 체크
+        let s = state_last_check(Some("not-a-date"));
+        assert!(should_check_at(&s, at("2024-01-01T12:00:00Z")));
     }
 
     #[test]
-    fn duration_under_interval() {
-        // 간격 미달 케이스
-        let past = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let future = "2024-01-01T06:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let diff = future.signed_duration_since(past);
-        assert_eq!(diff.num_hours(), 6);
-        assert!(diff.num_hours() < CHECK_INTERVAL_HOURS);
+    fn should_check_at_just_checked() {
+        // 방금(0분 전) 체크했으면 스킵
+        let s = state_last_check(Some("2024-01-01T12:00:00Z"));
+        assert!(!should_check_at(&s, at("2024-01-01T12:00:00Z")));
+    }
+
+    #[test]
+    fn should_check_at_under_interval() {
+        // 59분 전 → 스킵
+        let s = state_last_check(Some("2024-01-01T12:00:00Z"));
+        assert!(!should_check_at(&s, at("2024-01-01T12:59:00Z")));
+    }
+
+    #[test]
+    fn should_check_at_exactly_interval() {
+        // 정확히 60분 → 체크 (>= 비교)
+        let s = state_last_check(Some("2024-01-01T12:00:00Z"));
+        assert!(should_check_at(&s, at("2024-01-01T13:00:00Z")));
+    }
+
+    #[test]
+    fn should_check_at_over_interval() {
+        // 한참 지남 → 체크
+        let s = state_last_check(Some("2024-01-01T00:00:00Z"));
+        assert!(should_check_at(&s, at("2024-01-01T13:00:00Z")));
+    }
+
+    #[test]
+    fn should_check_at_future_last_check() {
+        // last_check가 미래(시계 이상)면 경과가 음수 → 스킵
+        let s = state_last_check(Some("2024-01-01T13:00:00Z"));
+        assert!(!should_check_at(&s, at("2024-01-01T12:00:00Z")));
+    }
+
+    // ── is_snoozed_at tests (순수 함수 직접 검증) ──
+
+    fn snoozed_state(version: Option<&str>, until: Option<&str>) -> UpdaterState {
+        UpdaterState {
+            snoozed_version: version.map(|s| s.to_string()),
+            snooze_until: until.map(|s| s.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn is_snoozed_active_same_version() {
+        // 같은 버전 + 스누즈 기간 내 → 스누즈됨
+        let s = snoozed_state(Some("v1.0.1"), Some("2024-01-02T00:00:00Z"));
+        assert!(is_snoozed_at(&s, "v1.0.1", at("2024-01-01T12:00:00Z")));
+    }
+
+    #[test]
+    fn is_snoozed_expired() {
+        // 같은 버전이지만 스누즈 기간 지남 → 다시 알림
+        let s = snoozed_state(Some("v1.0.1"), Some("2024-01-01T00:00:00Z"));
+        assert!(!is_snoozed_at(&s, "v1.0.1", at("2024-01-01T12:00:00Z")));
+    }
+
+    #[test]
+    fn is_snoozed_different_version_ignores_snooze() {
+        // 더 새로운 버전이면 스누즈 무시
+        let s = snoozed_state(Some("v1.0.1"), Some("2024-01-02T00:00:00Z"));
+        assert!(!is_snoozed_at(&s, "v1.0.2", at("2024-01-01T12:00:00Z")));
+    }
+
+    #[test]
+    fn is_snoozed_no_until() {
+        // snooze_until 없으면 스누즈 안 됨(보여준 적은 있으나 닫지 않은 상태)
+        let s = snoozed_state(Some("v1.0.1"), None);
+        assert!(!is_snoozed_at(&s, "v1.0.1", at("2024-01-01T12:00:00Z")));
+    }
+
+    #[test]
+    fn is_snoozed_no_snoozed_version() {
+        // 스누즈 기록 자체가 없으면 false
+        let s = snoozed_state(None, Some("2024-01-02T00:00:00Z"));
+        assert!(!is_snoozed_at(&s, "v1.0.1", at("2024-01-01T12:00:00Z")));
+    }
+
+    #[test]
+    fn is_snoozed_invalid_until() {
+        // snooze_until 파싱 불가 → 스누즈 안 됨
+        let s = snoozed_state(Some("v1.0.1"), Some("not-a-date"));
+        assert!(!is_snoozed_at(&s, "v1.0.1", at("2024-01-01T12:00:00Z")));
     }
 
     // ── GithubRelease tests ──
@@ -460,56 +594,16 @@ mod tests {
         let state = UpdaterState {
             last_check: Some(Utc::now().to_rfc3339()),
             pending_version: None,
+            ..Default::default()
         };
         save_state(&state);
     }
 
-    // ── should_check logic tests (순수 로직 검증) ──
+    // ── CHECK_INTERVAL_MINUTES constant ──
 
     #[test]
-    fn should_check_logic_none_last_check() {
-        // last_check가 None이면 체크 필요
-        let state = UpdaterState {
-            last_check: None,
-            pending_version: None,
-        };
-        assert!(state.last_check.is_none());
-    }
-
-    #[test]
-    fn should_check_logic_old_timestamp() {
-        // 24시간 전이면 체크 필요
-        let last = "2020-01-01T00:00:00Z";
-        let last_time = last.parse::<DateTime<Utc>>().unwrap();
-        let now = Utc::now();
-        let diff = now.signed_duration_since(last_time);
-        assert!(diff.num_hours() >= CHECK_INTERVAL_HOURS);
-    }
-
-    #[test]
-    fn should_check_logic_recent_timestamp() {
-        // 방금 체크했으면 체크 불필요
-        let last = Utc::now().to_rfc3339();
-        let last_time = last.parse::<DateTime<Utc>>().unwrap();
-        let now = Utc::now();
-        let diff = now.signed_duration_since(last_time);
-        assert!(diff.num_hours() < CHECK_INTERVAL_HOURS);
-    }
-
-    #[test]
-    fn should_check_logic_invalid_timestamp() {
-        // 잘못된 형식이면 체크 필요
-        let invalid = "not-a-date";
-        let parsed = invalid.parse::<DateTime<Utc>>();
-        assert!(parsed.is_err());
-        // should_check에서 파싱 실패 시 true 반환하는 로직
-    }
-
-    // ── CHECK_INTERVAL_HOURS constant ──
-
-    #[test]
-    fn check_interval_is_12_hours() {
-        assert_eq!(CHECK_INTERVAL_HOURS, 12);
+    fn check_interval_is_60_minutes() {
+        assert_eq!(CHECK_INTERVAL_MINUTES, 60);
     }
 
     // ── Boundary value tests ──
@@ -562,30 +656,11 @@ mod tests {
     }
 
     #[test]
-    fn duration_exactly_at_interval_boundary() {
-        // 정확히 12시간 → 체크 필요 (>= 비교)
-        let past = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let exactly_12h = "2024-01-01T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let diff = exactly_12h.signed_duration_since(past);
-        assert_eq!(diff.num_hours(), 12);
-        assert!(diff.num_hours() >= CHECK_INTERVAL_HOURS);
-    }
-
-    #[test]
-    fn duration_one_hour_before_interval() {
-        // 11시간 → 체크 불필요
-        let past = "2024-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let almost = "2024-01-01T11:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let diff = almost.signed_duration_since(past);
-        assert_eq!(diff.num_hours(), 11);
-        assert!(diff.num_hours() < CHECK_INTERVAL_HOURS);
-    }
-
-    #[test]
     fn updater_state_empty_strings() {
         let state = UpdaterState {
             last_check: Some("".to_string()),
             pending_version: Some("".to_string()),
+            ..Default::default()
         };
         let json = serde_json::to_string(&state).unwrap();
         let loaded: UpdaterState = serde_json::from_str(&json).unwrap();

@@ -83,6 +83,23 @@ fn default_show_hostname() -> bool {
     true
 }
 
+/// update_available 알림은 클릭해야 설치가 진행되므로 자동 닫힘에서 제외(0=sticky).
+/// 그 외에는 설정값(`configured`)을 그대로 쓴다.
+fn resolve_auto_dismiss(source: &str, event: &str, configured: u32) -> u32 {
+    if source == "updater" && event == "update_available" {
+        0
+    } else {
+        configured
+    }
+}
+
+/// 현재 화면에 update_available 알림이 떠 있는지. 주기 체크가 중복 생성하지 않도록 사용.
+fn has_active_update_toast(notifications: &[NotificationData]) -> bool {
+    notifications
+        .iter()
+        .any(|n| n.source == "updater" && n.event_display == "update_available")
+}
+
 pub struct NotificationManager {
     notifications: Vec<NotificationData>,
     heights: HashMap<String, f64>,
@@ -143,6 +160,19 @@ pub fn show_notification(
         request.pid,
         request.source
     );
+
+    // 업데이트 가능 알림은 sticky(자동 닫힘 없음)이므로, 이미 화면에 떠 있으면
+    // 주기 체크가 또 띄우지 않도록 중복 생성을 막는다.
+    if request.source == "updater" && request.event == "update_available" {
+        let already_shown = {
+            let mgr = state.lock().unwrap();
+            has_active_update_toast(&mgr.notifications)
+        };
+        if already_shown {
+            log::debug!("[NOTIFY] update_available already on screen, skip duplicate");
+            return;
+        }
+    }
 
     // For internal notifications (updater), skip win32 lookups
     let is_internal = request.source == "updater";
@@ -222,7 +252,11 @@ pub fn show_notification(
     mgr.counter += 1;
     let id = format!("notify-{}", mgr.counter);
 
-    let auto_dismiss_seconds = crate::setup::get_hook_config().auto_dismiss_seconds;
+    let auto_dismiss_seconds = resolve_auto_dismiss(
+        &request.source,
+        &request.event,
+        crate::setup::get_hook_config().auto_dismiss_seconds,
+    );
 
     let data = NotificationData {
         id: id.clone(),
@@ -576,6 +610,57 @@ mod tests {
             hostname: None,
             show_hostname: false,
         }
+    }
+
+    fn nd_kind(source: &str, event_display: &str) -> NotificationData {
+        NotificationData {
+            source: source.to_string(),
+            event_display: event_display.to_string(),
+            ..nd("notify-x")
+        }
+    }
+
+    // ── resolve_auto_dismiss tests ──
+
+    #[test]
+    fn resolve_auto_dismiss_update_available_is_sticky() {
+        // 업데이트 가능 알림은 설정과 무관하게 0(sticky)
+        assert_eq!(resolve_auto_dismiss("updater", "update_available", 10), 0);
+    }
+
+    #[test]
+    fn resolve_auto_dismiss_update_completed_uses_config() {
+        // 설치 완료 알림(task_complete)은 설정값 그대로
+        assert_eq!(resolve_auto_dismiss("updater", "task_complete", 10), 10);
+    }
+
+    #[test]
+    fn resolve_auto_dismiss_normal_uses_config() {
+        assert_eq!(resolve_auto_dismiss("claude", "task_complete", 7), 7);
+        assert_eq!(resolve_auto_dismiss("claude", "user_input_required", 0), 0);
+    }
+
+    // ── has_active_update_toast tests ──
+
+    #[test]
+    fn has_active_update_toast_empty() {
+        assert!(!has_active_update_toast(&[]));
+    }
+
+    #[test]
+    fn has_active_update_toast_present() {
+        let v = vec![nd_kind("updater", "update_available")];
+        assert!(has_active_update_toast(&v));
+    }
+
+    #[test]
+    fn has_active_update_toast_ignores_other_kinds() {
+        // 일반 알림과 설치완료(task_complete)는 중복 방지 대상이 아님
+        let v = vec![
+            nd_kind("claude", "task_complete"),
+            nd_kind("updater", "task_complete"),
+        ];
+        assert!(!has_active_update_toast(&v));
     }
 
     #[test]
