@@ -385,9 +385,9 @@ async function onClose() {
           v-model="activeTab"
           :tabs="[
             { value: 'general', label: t('setup.tab_general') },
-            { value: 'design', label: t('setup.tab_design') },
             { value: 'hooks', label: t('setup.tab_hooks') },
             { value: 'remote', label: t('setup.tab_remote') },
+            { value: 'design', label: t('setup.tab_design') },
             { value: 'stats', label: t('setup.tab_stats') },
             { value: 'howto', label: t('setup.tab_howto') },
             { value: 'about', label: t('setup.tab_about') },
