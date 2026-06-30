@@ -114,6 +114,8 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 
 Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/components/ui/`).
 
+**Styling: Tailwind CSS v4 (utility-first) + shadcn-vue.** Compose with utility classes — avoid hand-written `<style>`/raw CSS. Use arbitrary-value utilities when needed (`bg-[radial-gradient(...)]`, `[stop-color:var(--chart-1)]`), `tw-animate-css` for entrance/motion (`animate-in fade-in slide-in-from-bottom-2`, `motion-reduce:animate-none`), and the existing design tokens (CSS vars in `src/global.css`: shadcn tokens, `--event-*` event colors shared with the toast, `--chart-*`, `--font-mono` = D2Coding). Every screen must work in both light and dark themes (toggle lives in `Setup.vue`).
+
 | File                             | Purpose                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------ |
 | `App.vue`                        | Notification window shell — auto-dismiss progress bar, dynamic window height, light/dark theme; delegates card rendering to `ToastCard.vue` |
