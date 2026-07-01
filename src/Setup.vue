@@ -26,6 +26,7 @@ import HookSettings from "./components/HookSettings.vue";
 import HowtoSettings from "./components/HowtoSettings.vue";
 import RemoteSettings from "./components/RemoteSettings.vue";
 import SlidingTabs from "./components/SlidingTabs.vue";
+import StatsSettings from "./components/StatsSettings.vue";
 import type { HookConfig } from "./types";
 
 const { t, locale } = useI18n();
@@ -152,7 +153,7 @@ onMounted(async () => {
   const hash = window.location.hash.slice(1);
   if (
     hash &&
-    ["general", "design", "hooks", "remote", "howto", "about"].includes(hash)
+    ["general", "design", "hooks", "remote", "stats", "howto", "about"].includes(hash)
   ) {
     activeTab.value = hash;
   }
@@ -162,7 +163,7 @@ onMounted(async () => {
     const h = window.location.hash.slice(1);
     if (
       h &&
-      ["general", "design", "hooks", "remote", "howto", "about"].includes(h)
+      ["general", "design", "hooks", "remote", "stats", "howto", "about"].includes(h)
     ) {
       activeTab.value = h;
     }
@@ -387,6 +388,7 @@ async function onClose() {
             { value: 'design', label: t('setup.tab_design') },
             { value: 'hooks', label: t('setup.tab_hooks') },
             { value: 'remote', label: t('setup.tab_remote') },
+            { value: 'stats', label: t('setup.tab_stats') },
             { value: 'howto', label: t('setup.tab_howto') },
             { value: 'about', label: t('setup.tab_about') },
           ]"
@@ -405,13 +407,14 @@ async function onClose() {
           />
           <HookSettings v-if="activeTab === 'hooks'" v-model="config" />
           <RemoteSettings v-if="activeTab === 'remote'" v-model="config" />
+          <StatsSettings v-if="activeTab === 'stats'" />
           <HowtoSettings v-if="activeTab === 'howto'" />
           <AboutSettings v-if="activeTab === 'about'" />
         </div>
       </div>
 
       <!-- Actions -->
-      <div v-if="activeTab !== 'about' && activeTab !== 'howto'" class="flex items-center gap-2">
+      <div v-if="activeTab !== 'about' && activeTab !== 'howto' && activeTab !== 'stats'" class="flex items-center gap-2">
         <Button variant="secondary" @click="onOpenSettings">
           {{ t("setup.open_settings") }}
         </Button>

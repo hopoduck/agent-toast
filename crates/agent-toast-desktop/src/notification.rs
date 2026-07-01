@@ -145,12 +145,18 @@ pub fn show_notification(
     state: &NotificationManagerState,
     request: NotifyRequest,
 ) {
+    let stats_state = app.state::<crate::stats::StatsState>().inner().clone();
+    let ev = request.event.clone();
+    let src = request.source.clone();
+    let remote = request.hostname.is_some();
+
     if !GLOBAL_RATE_LIMITER.try_consume() {
         log::warn!(
             "[RATE] dropped notification: event={} hostname={:?}",
             request.event,
             request.hostname
         );
+        crate::stats::record_skipped_ratelimit(&stats_state, &ev, &src, remote);
         return;
     }
 
@@ -225,6 +231,7 @@ pub fn show_notification(
         let focused = win32::is_hwnd_focused(hwnd);
         log::debug!("[DEBUG] is_hwnd_focused({})={}", hwnd, focused);
         if focused {
+            crate::stats::record_skipped_focused(&stats_state, &ev, &src, remote);
             return;
         }
 
@@ -307,6 +314,7 @@ pub fn show_notification(
         match window {
             Ok(win) => {
                 log::debug!("[NOTIFY] Window created: id={}", id);
+                crate::stats::record_shown(&stats_state, &ev, &src, remote);
                 // Explicitly set position with Logical coordinates (builder may use Physical)
                 let _ =
                     win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
@@ -352,14 +360,33 @@ pub fn show_notification(
     }
 }
 
-pub fn close_notification(app: &AppHandle, state: &NotificationManagerState, id: &str) {
+pub fn close_notification(
+    app: &AppHandle,
+    state: &NotificationManagerState,
+    id: &str,
+    reason: crate::stats::CloseReason,
+) {
     log::debug!("[DEBUG] close_notification called: id={}", id);
     let mut mgr = state.lock().unwrap();
+    let found = mgr.notifications.iter().find(|n| n.id == id).cloned();
     mgr.notifications.retain(|n| n.id != id);
     mgr.heights.remove(id);
     let remaining: Vec<NotificationData> = mgr.notifications.clone();
     let heights = mgr.heights.clone();
     drop(mgr);
+
+    // Record exactly once per toast: only the first close (the one that actually
+    // removed the entry) sees `found`. A racing second close finds nothing.
+    if let Some(nd) = found {
+        let stats_state = app.state::<crate::stats::StatsState>().inner().clone();
+        crate::stats::record_terminal(
+            &stats_state,
+            reason,
+            &nd.event_display,
+            &nd.source,
+            nd.hostname.is_some(),
+        );
+    }
 
     // Close the window
     if let Some(win) = app.get_webview_window(id) {
@@ -589,7 +616,7 @@ pub fn on_foreground_changed(
     drop(mgr);
 
     for id in to_close {
-        close_notification(app, state, &id);
+        close_notification(app, state, &id, crate::stats::CloseReason::Focus);
     }
 }
 

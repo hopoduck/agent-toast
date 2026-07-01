@@ -6,6 +6,7 @@ mod notification;
 pub mod pipe;
 pub mod setup;
 pub mod sound;
+pub mod stats;
 mod updater;
 pub mod win32;
 
@@ -111,6 +112,13 @@ fn set_theme(theme: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_stats(app: AppHandle) -> stats::Stats {
+    let state = app.state::<stats::StatsState>();
+    let m = state.lock().unwrap();
+    m.stats.clone()
+}
+
+#[tauri::command]
 fn is_dev_mode() -> bool {
     cfg!(debug_assertions)
 }
@@ -178,9 +186,13 @@ fn get_notification_data(window: WebviewWindow) -> Option<NotificationData> {
 }
 
 #[tauri::command]
-fn close_notify(id: String, app: AppHandle) {
+fn close_notify(id: String, reason: Option<String>, app: AppHandle) {
+    let close_reason = match reason.as_deref() {
+        Some("timeout") => stats::CloseReason::Timeout,
+        _ => stats::CloseReason::Manual,
+    };
     let state = app.state::<NotificationManagerState>();
-    close_notification(&app, &state, &id);
+    close_notification(&app, &state, &id, close_reason);
 }
 
 #[tauri::command]
@@ -192,13 +204,18 @@ fn resize_notify(id: String, height: f64, app: AppHandle) {
 #[tauri::command]
 fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
+    let state = app.state::<NotificationManagerState>();
+    // 활성화보다 먼저 Activated로 닫아 알림을 매니저에서 제거한다. activate_window가
+    // 소스 창을 포그라운드로 올리면 EVENT_SYSTEM_FOREGROUND가 발생하고, 포그라운드
+    // 리스너 스레드가 이 토스트를 Focus 사유로 먼저 닫아버리는 경쟁이 생기는데
+    // (그러면 "보기" 클릭이 closed_focus로 잘못 집계됨), 먼저 제거하면 리스너가
+    // 일치하는 알림을 못 찾아 경쟁이 사라진다.
+    close_notification(&app, &state, &id, stats::CloseReason::Activated);
     if hwnd != 0 {
         win32::activate_window(hwnd);
     } else {
         log::debug!("[ACTIVATE] hwnd=0, skipping window activation (likely remote)");
     }
-    let state = app.state::<NotificationManagerState>();
-    close_notification(&app, &state, &id);
 }
 
 #[tauri::command]
@@ -362,6 +379,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
 
     let mgr_state = notification::create_manager();
     let http_state = HttpServerState(Arc::new(Mutex::new(None)));
+    let stats_state = stats::create_manager();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -369,6 +387,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
         .plugin(tauri_plugin_process::init())
         .manage(mgr_state.clone())
         .manage(http_state)
+        .manage(stats_state.clone())
         .invoke_handler(tauri::generate_handler![
             close_notify,
             resize_notify,
@@ -378,6 +397,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             get_locale,
             get_theme,
             set_theme,
+            get_stats,
             is_dev_mode,
             is_portable,
             open_settings,
@@ -449,7 +469,10 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
                 })
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "settings" => open_setup_window(app),
-                    "restart" => app.restart(),
+                    "restart" => {
+                        stats::flush(&app.state::<stats::StatsState>().inner().clone());
+                        app.restart()
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -516,11 +539,20 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
                 });
             }
 
+            // Debounced stats flush: persist at most every 5s if changed.
+            {
+                let flush_state = handle.state::<stats::StatsState>().inner().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    stats::flush(&flush_state);
+                });
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| match event {
+        .run(|app, event| match event {
             RunEvent::ExitRequested { api, code, .. } => {
                 log::warn!("[EXIT] ExitRequested: code={:?}", code);
                 if code.is_none() {
@@ -531,6 +563,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             }
             RunEvent::Exit => {
                 log::warn!("[EXIT] App is shutting down (RunEvent::Exit)");
+                stats::flush(&app.state::<stats::StatsState>().inner().clone());
             }
             _ => {}
         });

@@ -69,6 +69,26 @@ export interface MonitorInfo {
   is_primary: boolean;
 }
 
+export interface CounterSet {
+  shown: number;
+  activated: number;
+  closed_manual: number;
+  closed_timeout: number;
+  closed_focus: number;
+  skipped_focused: number;
+  skipped_ratelimit: number;
+}
+
+export interface Stats {
+  version: number;
+  since: string;
+  /** event -> source -> counters */
+  counts: Record<string, Record<string, CounterSet>>;
+  /** "local" | "remote" -> counters */
+  origin: Record<string, CounterSet>;
+  synced: unknown | null;
+}
+
 export interface ToastStyle {
   /** "left" | "none" */
   bar: string;

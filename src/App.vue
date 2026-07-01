@@ -64,7 +64,7 @@ function startDismissTimer() {
       dismissActive.value = true;
     });
     dismissStartedAt = performance.now();
-    dismissTimer = setTimeout(onClose, dismissRemainingMs);
+    dismissTimer = setTimeout(() => onClose("timeout"), dismissRemainingMs);
   }
 }
 
@@ -80,7 +80,7 @@ function resumeDismiss() {
   if (!dismissPaused.value) return;
   dismissPaused.value = false;
   if (dismissRemainingMs <= 0) {
-    onClose();
+    onClose("timeout");
     return;
   }
   dismissStartedAt = performance.now();
@@ -194,7 +194,7 @@ async function onView() {
   });
 }
 
-async function onClose() {
+async function onClose(reason: "manual" | "timeout" = "manual") {
   if (!notification.value) return;
   const closeId = notification.value.id;
   // 업데이트 알림을 닫으면 해당 버전을 24시간 동안 다시 알리지 않음(스누즈)
@@ -208,7 +208,7 @@ async function onClose() {
   show.value = false;
   currentNotificationId = null;
   setTimeout(async () => {
-    await invoke("close_notify", { id: closeId });
+    await invoke("close_notify", { id: closeId, reason });
   }, 300);
 }
 
@@ -230,7 +230,7 @@ onUnmounted(() => {
       :dismiss-paused="dismissPaused"
       :is-dev-mode="isDevMode"
       @view="onView"
-      @close="onClose"
+      @close="() => onClose('manual')"
       @mouseenter="pauseDismiss"
       @mouseleave="resumeDismiss"
     />
