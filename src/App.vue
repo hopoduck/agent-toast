@@ -45,6 +45,7 @@ const toastStyle = ref<ToastStyle>({
   border: "subtle",
   effects: [],
   body: "glow",
+  density: "comfortable",
   font_sans: "",
   font_mono: "",
 });

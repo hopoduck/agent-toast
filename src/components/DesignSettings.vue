@@ -76,6 +76,7 @@ const previewStyle = computed<ToastStyle>(() => ({
   border: config.value.toast_border,
   effects: config.value.toast_effects,
   body: config.value.toast_body,
+  density: config.value.toast_density,
   font_sans: config.value.toast_font_sans,
   font_mono: config.value.toast_font_mono,
 }));
@@ -99,6 +100,11 @@ const bodyOptions = [
   { value: "glow", labelKey: "design.body_glow" },
   { value: "tint", labelKey: "design.body_tint" },
   { value: "flat", labelKey: "design.body_flat" },
+] as const;
+
+const densityOptions = [
+  { value: "comfortable", labelKey: "design.density_comfortable" },
+  { value: "compact", labelKey: "design.density_compact" },
 ] as const;
 
 const effectOptions = [
@@ -174,11 +180,10 @@ function setEffect(name: string, on: boolean) {
       <div
         class="flex items-center justify-center rounded-[12px] border border-border bg-muted/30 py-5"
       >
-        <!-- 실제 알림 창과 동일한 380x140 논리 픽셀 -->
-        <div class="w-[380px] h-[140px] pointer-events-none">
+        <!-- 실제 알림 창과 동일한 380 논리 픽셀 폭 (높이는 내용에 맞춤) -->
+        <div class="w-[380px] pointer-events-none">
           <ToastCard
             :key="previewKey"
-            class="h-full"
             :notification="previewData"
             :toast-style="previewStyle"
             :show="true"
@@ -209,6 +214,28 @@ function setEffect(name: string, on: boolean) {
       <div
         class="rounded-[12px] border border-border overflow-hidden divide-y divide-border"
       >
+        <div
+          class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
+        >
+          <span class="text-sm font-medium text-foreground">{{
+            t("design.density")
+          }}</span>
+          <Select :key="`density-${locale}`" v-model="config.toast_density">
+            <SelectTrigger size="sm" class="w-[150px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="o in densityOptions"
+                :key="o.value"
+                :value="o.value"
+              >
+                {{ t(o.labelKey) }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div
           class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
         >

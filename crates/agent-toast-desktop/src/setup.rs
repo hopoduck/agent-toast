@@ -102,6 +102,9 @@ pub struct HookConfig {
     /// 알림 토스트 배경: "glow"(코너 글로우) | "tint"(전체 틴트) | "flat"
     #[serde(default = "default_toast_body")]
     pub toast_body: String,
+    /// 알림 토스트 밀도: "comfortable"(기본) | "compact"(높이 축소)
+    #[serde(default = "default_toast_density")]
+    pub toast_density: String,
     /// 알림 토스트 본문 폰트 패밀리명. "" = 기본(번들 Pretendard)
     #[serde(default)]
     pub toast_font_sans: String,
@@ -168,6 +171,10 @@ fn default_toast_border() -> String {
 
 fn default_toast_body() -> String {
     "glow".into()
+}
+
+fn default_toast_density() -> String {
+    "comfortable".into()
 }
 
 fn default_locale() -> String {
@@ -330,6 +337,7 @@ impl Default for HookConfig {
             toast_border: default_toast_border(),
             toast_effects: Vec::new(),
             toast_body: default_toast_body(),
+            toast_density: default_toast_density(),
             toast_font_sans: String::new(),
             toast_font_mono: String::new(),
         }
@@ -458,6 +466,10 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         toast_body: root["agent_toast"]["toast_body"]
             .as_str()
             .unwrap_or("glow")
+            .to_string(),
+        toast_density: root["agent_toast"]["toast_density"]
+            .as_str()
+            .unwrap_or("comfortable")
             .to_string(),
         toast_font_sans: root["agent_toast"]["toast_font_sans"]
             .as_str()
@@ -756,6 +768,10 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert(
         "toast_body".into(),
         Value::String(config.toast_body.clone()),
+    );
+    cn.insert(
+        "toast_density".into(),
+        Value::String(config.toast_density.clone()),
     );
     cn.insert(
         "toast_font_sans".into(),
@@ -1284,13 +1300,14 @@ pub fn write_theme(theme: &str) -> Result<(), String> {
     std::fs::write(&path, updated).map_err(|e| e.to_string())
 }
 
-/// 알림 창이 렌더링에 사용하는 토스트 디자인 4축 값.
+/// 알림 창이 렌더링에 사용하는 토스트 디자인 축 값.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToastStyle {
     pub bar: String,
     pub border: String,
     pub effects: Vec<String>,
     pub body: String,
+    pub density: String,
     pub font_sans: String,
     pub font_mono: String,
 }
@@ -1303,6 +1320,7 @@ fn toast_style_from_json(content: &str) -> ToastStyle {
         border: config.toast_border,
         effects: config.toast_effects,
         body: config.toast_body,
+        density: config.toast_density,
         font_sans: config.toast_font_sans,
         font_mono: config.toast_font_mono,
     }
@@ -1689,6 +1707,7 @@ mod tests {
         assert_eq!(style.border, "subtle");
         assert!(style.effects.is_empty());
         assert_eq!(style.body, "glow");
+        assert_eq!(style.density, "comfortable");
     }
 
     #[test]
@@ -1698,7 +1717,8 @@ mod tests {
                 "toast_bar": "none",
                 "toast_border": "accent",
                 "toast_effects": ["shimmer"],
-                "toast_body": "flat"
+                "toast_body": "flat",
+                "toast_density": "compact"
             }
         }"#;
         let style = toast_style_from_json(json);
@@ -1706,6 +1726,7 @@ mod tests {
         assert_eq!(style.border, "accent");
         assert_eq!(style.effects, vec!["shimmer"]);
         assert_eq!(style.body, "flat");
+        assert_eq!(style.density, "compact");
     }
 
     #[test]
@@ -1729,6 +1750,7 @@ mod tests {
         assert_eq!(config.toast_border, "subtle");
         assert!(config.toast_effects.is_empty());
         assert_eq!(config.toast_body, "glow");
+        assert_eq!(config.toast_density, "comfortable");
     }
 
     #[test]
@@ -1738,7 +1760,8 @@ mod tests {
                 "toast_bar": "none",
                 "toast_border": "accent",
                 "toast_effects": ["ring", "breathe"],
-                "toast_body": "tint"
+                "toast_body": "tint",
+                "toast_density": "compact"
             }
         }"#;
         let config = parse_hook_config_from_json(json);
@@ -1746,6 +1769,7 @@ mod tests {
         assert_eq!(config.toast_border, "accent");
         assert_eq!(config.toast_effects, vec!["ring", "breathe"]);
         assert_eq!(config.toast_body, "tint");
+        assert_eq!(config.toast_density, "compact");
     }
 
     /// toast_effects 배열에 문자열이 아닌 항목이 섞여도 무시하고 파싱 (전방 호환)
@@ -1764,6 +1788,7 @@ mod tests {
             toast_border: "accent".into(),
             toast_effects: vec!["pulse".into(), "shimmer".into()],
             toast_body: "flat".into(),
+            toast_density: "compact".into(),
             ..HookConfig::default()
         };
 
@@ -1775,6 +1800,7 @@ mod tests {
         assert_eq!(parsed.toast_border, "accent");
         assert_eq!(parsed.toast_effects, vec!["pulse", "shimmer"]);
         assert_eq!(parsed.toast_body, "flat");
+        assert_eq!(parsed.toast_density, "compact");
     }
 
     #[test]

@@ -146,6 +146,8 @@ const eventStyles: Record<
 
 const styles = computed(() => eventStyles[eventType.value]);
 
+const compact = computed(() => props.toastStyle.density === "compact");
+
 const hasEffect = (name: string) => props.toastStyle.effects.includes(name);
 
 // 회전 꼬리 페이드: 길이가 다른 대시를 머리 위치에 정렬해 겹침.
@@ -262,7 +264,8 @@ const fontVars = computed(() => {
 
     <!-- Content -->
     <div
-      class="relative z-10 flex-1 flex flex-col p-3 min-w-0 text-shadow-[var(--toast-text-shadow)]"
+      class="relative z-10 flex-1 min-w-0 text-shadow-[var(--toast-text-shadow)]"
+      :class="compact ? 'flex items-center gap-2.5 p-2.5' : 'flex flex-col p-3'"
     >
       <!-- Dismiss progress -->
       <div
@@ -289,77 +292,147 @@ const fontVars = computed(() => {
         />
       </div>
 
-      <!-- Header -->
-      <div class="flex items-center justify-between text-shadow-none">
-        <div class="flex items-center gap-1.5">
-          <span
-            class="size-5 rounded-md flex items-center justify-center"
-            :class="styles.icon"
+      <!-- Comfortable: 헤더 / 제목·메시지 / 보기·닫기 세로 스택 -->
+      <template v-if="!compact">
+        <!-- Header -->
+        <div class="flex items-center justify-between text-shadow-none">
+          <div class="flex items-center gap-1.5">
+            <span
+              class="size-5 rounded-md flex items-center justify-center"
+              :class="styles.icon"
+            >
+              <component :is="eventIcon" :size="12" />
+            </span>
+            <img
+              class="size-3.5 object-contain opacity-85"
+              :src="sourceLogo"
+              alt=""
+            />
+            <span
+              class="text-[13px] font-semibold tracking-wide text-shadow-[0_0_8px_color-mix(in_oklch,var(--toast-accent)_55%,transparent)]"
+              :class="styles.label"
+              >{{ eventLabel }}</span
+            >
+            <span
+              v-if="isDevMode"
+              class="px-1 py-px text-[8px] font-bold leading-none bg-red-500 text-white rounded-sm"
+              >DEV</span
+            >
+          </div>
+          <button
+            class="size-6 flex items-center justify-center rounded-md text-toast-fg-dim hover:text-toast-fg hover:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)] transition-colors"
+            @click="emit('close')"
+            :aria-label="t('notification.close')"
           >
-            <component :is="eventIcon" :size="12" />
-          </span>
-          <img
-            class="size-3.5 object-contain opacity-85"
-            :src="sourceLogo"
-            alt=""
+            <X :size="14" />
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="flex flex-col gap-1 min-w-0 mt-1.5">
+          <div
+            class="text-[14px] font-bold text-toast-fg truncate leading-snug"
+          >
+            {{ truncate(notification.window_title) }}
+            <span
+              v-if="hostnameLabel"
+              class="ml-1.5 text-[11px] font-normal text-toast-fg-dim"
+            >
+              @ {{ truncate(hostnameLabel) }}
+            </span>
+          </div>
+          <!-- messageHtml은 markdown-it(zero, html:false)이 이스케이프한 인라인 강조 결과 -->
+          <div
+            v-if="messageHtml"
+            class="text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug [&_strong]:font-semibold [&_strong]:text-toast-fg [&_code]:font-mono [&_code]:text-[11px] [&_code]:rounded [&_code]:px-1 [&_code]:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)]"
+            v-html="messageHtml"
           />
-          <span
-            class="text-[13px] font-semibold tracking-wide text-shadow-[0_0_8px_color-mix(in_oklch,var(--toast-accent)_55%,transparent)]"
-            :class="styles.label"
-            >{{ eventLabel }}</span
-          >
-          <span
-            v-if="isDevMode"
-            class="px-1 py-0.5 text-[9px] font-bold bg-red-500 text-white rounded"
-            >DEV</span
-          >
         </div>
-        <button
-          class="size-6 flex items-center justify-center rounded-md text-toast-fg-dim hover:text-toast-fg hover:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)] transition-colors"
-          @click="emit('close')"
-          :aria-label="t('notification.close')"
-        >
-          <X :size="14" />
-        </button>
-      </div>
 
-      <!-- Body -->
-      <div class="flex flex-col gap-1 min-w-0 mt-1.5">
-        <div class="text-[14px] font-bold text-toast-fg truncate leading-snug">
-          {{ truncate(notification.window_title) }}
-          <span
-            v-if="hostnameLabel"
-            class="ml-1.5 text-[11px] font-normal text-toast-fg-dim"
+        <!-- Actions -->
+        <div class="flex gap-1.5 mt-2.5">
+          <button
+            v-if="!isRemote || isUpdateAvailable"
+            class="flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-semibold rounded-md border transition-colors"
+            :class="styles.viewBtn"
+            @click="emit('view')"
           >
-            @ {{ truncate(hostnameLabel) }}
-          </span>
+            <ChevronRight :size="14" />
+            {{ viewButtonText }}
+          </button>
+          <button
+            class="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-[color-mix(in_oklch,var(--toast-fg)_7%,transparent)] text-toast-fg border border-toast-border hover:bg-[color-mix(in_oklch,var(--toast-fg)_14%,transparent)] transition-colors"
+            @click="emit('close')"
+          >
+            {{ t("notification.close") }}
+          </button>
         </div>
-        <!-- messageHtml은 markdown-it(zero, html:false)이 이스케이프한 인라인 강조 결과 -->
-        <div
-          v-if="messageHtml"
-          class="text-xs font-medium text-toast-fg-dim line-clamp-2 leading-snug [&_strong]:font-semibold [&_strong]:text-toast-fg [&_code]:font-mono [&_code]:text-[11px] [&_code]:rounded [&_code]:px-1 [&_code]:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)]"
-          v-html="messageHtml"
-        />
-      </div>
+      </template>
 
-      <!-- Actions -->
-      <div class="flex gap-1.5 mt-2.5">
-        <button
-          v-if="!isRemote || isUpdateAvailable"
-          class="flex-1 flex items-center justify-center gap-1 py-1.5 text-[13px] font-semibold rounded-md border transition-colors"
-          :class="styles.viewBtn"
-          @click="emit('view')"
+      <!-- Compact: 아이콘 · 본문(라벨/제목/메시지) · 보기+닫기 좌우 분할 -->
+      <template v-else>
+        <span
+          class="size-5 rounded-md flex items-center justify-center shrink-0 self-start text-shadow-none"
+          :class="styles.icon"
         >
-          <ChevronRight :size="14" />
-          {{ viewButtonText }}
-        </button>
-        <button
-          class="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-[color-mix(in_oklch,var(--toast-fg)_7%,transparent)] text-toast-fg border border-toast-border hover:bg-[color-mix(in_oklch,var(--toast-fg)_14%,transparent)] transition-colors"
-          @click="emit('close')"
-        >
-          {{ t("notification.close") }}
-        </button>
-      </div>
+          <component :is="eventIcon" :size="12" />
+        </span>
+        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+          <div
+            class="flex items-center gap-1.5 min-w-0 text-shadow-none"
+          >
+            <img
+              class="size-3.5 object-contain opacity-85"
+              :src="sourceLogo"
+              alt=""
+            />
+            <span
+              class="text-[11px] font-semibold tracking-wide truncate"
+              :class="styles.label"
+              >{{ eventLabel }}</span
+            >
+            <span
+              v-if="isDevMode"
+              class="px-1 py-px text-[8px] font-bold leading-none bg-red-500 text-white rounded-sm shrink-0"
+              >DEV</span
+            >
+          </div>
+          <div
+            class="text-[13px] font-bold text-toast-fg truncate leading-tight"
+          >
+            {{ truncate(notification.window_title) }}
+            <span
+              v-if="hostnameLabel"
+              class="ml-1 text-[10px] font-normal text-toast-fg-dim"
+            >
+              @ {{ truncate(hostnameLabel) }}
+            </span>
+          </div>
+          <div
+            v-if="messageHtml"
+            class="text-[11px] font-medium text-toast-fg-dim truncate leading-tight [&_strong]:font-semibold [&_strong]:text-toast-fg [&_code]:font-mono [&_code]:text-[10px] [&_code]:rounded [&_code]:px-1 [&_code]:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)]"
+            v-html="messageHtml"
+          />
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          <button
+            v-if="!isRemote || isUpdateAvailable"
+            class="flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-semibold rounded-md border transition-colors"
+            :class="styles.viewBtn"
+            @click="emit('view')"
+          >
+            <ChevronRight :size="13" />
+            {{ viewButtonText }}
+          </button>
+          <button
+            class="size-6 flex items-center justify-center rounded-md text-toast-fg-dim hover:text-toast-fg hover:bg-[color-mix(in_oklch,var(--toast-fg)_10%,transparent)] transition-colors"
+            @click="emit('close')"
+            :aria-label="t('notification.close')"
+          >
+            <X :size="14" />
+          </button>
+        </div>
+      </template>
     </div>
   </div>
 </template>

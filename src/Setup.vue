@@ -124,6 +124,7 @@ const config = ref<HookConfig>({
   toast_border: "subtle",
   toast_effects: [],
   toast_body: "glow",
+  toast_density: "comfortable",
   toast_font_sans: "",
   toast_font_mono: "",
 });
@@ -272,6 +273,7 @@ function onReset() {
     toast_border: "subtle",
     toast_effects: [],
     toast_body: "glow",
+    toast_density: "comfortable",
     toast_font_sans: "",
     toast_font_mono: "",
   };

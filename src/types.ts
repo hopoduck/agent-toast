@@ -59,6 +59,7 @@ export interface HookConfig {
   toast_border: string;
   toast_effects: string[];
   toast_body: string;
+  toast_density: string;
   toast_font_sans: string;
   toast_font_mono: string;
 }
@@ -98,6 +99,8 @@ export interface ToastStyle {
   effects: string[];
   /** "glow" | "tint" | "flat" */
   body: string;
+  /** "comfortable" | "compact" */
+  density: string;
   /** 본문 폰트 패밀리명. "" = 기본(번들) */
   font_sans: string;
   /** 코드 폰트 패밀리명. "" = 기본(번들) */
