@@ -41,7 +41,7 @@ function setupResizeObserver() {
   resizeObserver.observe(rootRef.value);
 }
 const toastStyle = ref<ToastStyle>({
-  bar: "left",
+  bar: "none",
   border: "subtle",
   effects: [],
   body: "glow",

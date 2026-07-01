@@ -162,7 +162,7 @@ fn default_dynamic_message_enabled() -> bool {
 }
 
 fn default_toast_bar() -> String {
-    "left".into()
+    "none".into()
 }
 
 fn default_toast_border() -> String {
@@ -449,7 +449,7 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .unwrap_or_else(default_dynamic_message_enabled),
         toast_bar: root["agent_toast"]["toast_bar"]
             .as_str()
-            .unwrap_or("left")
+            .unwrap_or("none")
             .to_string(),
         toast_border: root["agent_toast"]["toast_border"]
             .as_str()
@@ -1703,7 +1703,7 @@ mod tests {
     #[test]
     fn toast_style_from_json_defaults() {
         let style = toast_style_from_json("{}");
-        assert_eq!(style.bar, "left");
+        assert_eq!(style.bar, "none");
         assert_eq!(style.border, "subtle");
         assert!(style.effects.is_empty());
         assert_eq!(style.body, "glow");
@@ -1714,7 +1714,7 @@ mod tests {
     fn toast_style_from_json_values() {
         let json = r#"{
             "agent_toast": {
-                "toast_bar": "none",
+                "toast_bar": "left",
                 "toast_border": "accent",
                 "toast_effects": ["shimmer"],
                 "toast_body": "flat",
@@ -1722,7 +1722,7 @@ mod tests {
             }
         }"#;
         let style = toast_style_from_json(json);
-        assert_eq!(style.bar, "none");
+        assert_eq!(style.bar, "left");
         assert_eq!(style.border, "accent");
         assert_eq!(style.effects, vec!["shimmer"]);
         assert_eq!(style.body, "flat");
@@ -1746,7 +1746,7 @@ mod tests {
     #[test]
     fn parse_toast_style_defaults_when_missing() {
         let config = parse_hook_config_from_json("{}");
-        assert_eq!(config.toast_bar, "left");
+        assert_eq!(config.toast_bar, "none");
         assert_eq!(config.toast_border, "subtle");
         assert!(config.toast_effects.is_empty());
         assert_eq!(config.toast_body, "glow");
@@ -1757,7 +1757,7 @@ mod tests {
     fn parse_toast_style_values() {
         let json = r#"{
             "agent_toast": {
-                "toast_bar": "none",
+                "toast_bar": "left",
                 "toast_border": "accent",
                 "toast_effects": ["ring", "breathe"],
                 "toast_body": "tint",
@@ -1765,7 +1765,7 @@ mod tests {
             }
         }"#;
         let config = parse_hook_config_from_json(json);
-        assert_eq!(config.toast_bar, "none");
+        assert_eq!(config.toast_bar, "left");
         assert_eq!(config.toast_border, "accent");
         assert_eq!(config.toast_effects, vec!["ring", "breathe"]);
         assert_eq!(config.toast_body, "tint");
@@ -1784,7 +1784,7 @@ mod tests {
     #[test]
     fn toast_style_write_roundtrip() {
         let config = HookConfig {
-            toast_bar: "none".into(),
+            toast_bar: "left".into(),
             toast_border: "accent".into(),
             toast_effects: vec!["pulse".into(), "shimmer".into()],
             toast_body: "flat".into(),
@@ -1796,7 +1796,7 @@ mod tests {
         write_agent_toast_settings(&mut root, &config);
         let parsed = parse_hook_config_from_json(&root.to_string());
 
-        assert_eq!(parsed.toast_bar, "none");
+        assert_eq!(parsed.toast_bar, "left");
         assert_eq!(parsed.toast_border, "accent");
         assert_eq!(parsed.toast_effects, vec!["pulse", "shimmer"]);
         assert_eq!(parsed.toast_body, "flat");
