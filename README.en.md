@@ -26,17 +26,18 @@
 
 ## ✨ Features
 
-- **Smart Notifications** - Click to activate terminal, auto-dismiss on focus return, skip if already focused
-- **Agent Message Display** - Optionally show the agent's last message (or the tool description on permission requests) as the notification body
-- **15 Hook Events** - Task completion, permission requests, input waiting, session start/end, and more
-- **Remote Notifications** - Receive Claude Code hook notifications from remote Linux servers as desktop toasts
-- **Multi-Monitor Support** - Display notifications on any corner of your preferred monitor with DPI scaling
-- **Notification Sound** - System alert sound so you never miss an event (toggleable in settings)
-- **Light/Dark Theme** - Toast design follows your system theme; hover to pause auto-dismiss
-- **Toast Design Customization** - Tune bar, border, background, effects, and density (comfortable/compact) plus sans/mono system fonts with a live preview (D2Coding bundled)
-- **Notification Stats** - Aggregated counts and insights for shown / clicked / auto-dismissed events
-- **Multilingual UI** - Korean/English support
-- **Auto Update** - New version notifications with one-click update
+- **One click** activates the exact terminal window that raised the notification
+- **Auto-dismiss** when you return to the terminal, and no toast at all if you're already looking at it
+- Shows the **agent's last message** in the notification body (tool description on permission requests)
+- **15 hook events** including task completion, permission requests, input waiting, and session start/end
+- Receives Claude Code hook notifications from **remote Linux servers** as desktop toasts
+- Pick any corner of any monitor in a **multi-monitor** setup, with DPI scaling
+- **System alert sound** so you never miss an event (toggleable in settings)
+- Follows the system **light/dark theme**, and hovering pauses auto-dismiss
+- Tune bar, border, background, effects, density (comfortable/compact), and sans/mono system fonts with a **live preview** (D2Coding bundled)
+- **Stats and insights** aggregated from shown, clicked, and auto-dismissed events
+- **Korean/English** UI
+- New version notifications with **one-click auto-update**
 
 ## 🖼️ Screenshots
 
@@ -89,9 +90,9 @@ Enable desired events in the settings window to automatically register hooks.
 
 ## ⚙️ How It Works
 
-- Single-instance management via Named Pipe — first launch starts the app, subsequent CLI calls send JSON through the pipe and exit immediately
-- Real-time focus detection via Win32 API for automatic notification dismissal
-- Process tree traversal from `--pid` for improved terminal window detection accuracy
+- The first launch starts the app; subsequent CLI calls just send JSON through a Named Pipe and exit immediately (single instance)
+- Detects focus changes in real time via Win32 API to auto-dismiss notifications
+- Walks the process tree up from `--pid` to find the terminal window that raised the notification
 
 ## 🌐 Remote Notifications (Linux Servers)
 
@@ -119,9 +120,9 @@ agent-toast-send init --url http://<desktop-ip>:38787 --dynamic [--hostname "pro
 - `<desktop-ip>` is the address reachable from the server to your desktop (Tailscale, LAN, SSH `-R`). Network reachability is the user's responsibility and is not managed by the app.
 - `--dynamic` shows the agent's last message (or the tool description on permission requests) as the notification body (omit for fixed text).
 - `--hostname` sets the label shown in the toast (omit to auto-detect via `hostname(1)`).
-- Default hooks registered: **Stop** (task completion), **Notification** (permission request). For finer customization, edit `~/.claude/settings.json` on the server directly.
+- By default, the **Stop** (task completion) and **Notification** (permission request) hooks are registered. For finer customization, edit `~/.claude/settings.json` on the server directly.
 
-To uninstall, run `agent-toast-send uninstall` — only removes agent-toast related hooks; all other hooks are preserved.
+To uninstall, run `agent-toast-send uninstall`. It only removes agent-toast related hooks and preserves everything else.
 
 </details>
 
@@ -129,23 +130,23 @@ To uninstall, run `agent-toast-send uninstall` — only removes agent-toast rela
 
 The app anonymously uploads notification counters (shown/clicked/closed counts) to an aggregation server and shows worldwide totals in the stats tab and the badge above.
 
-- **Sent**: cumulative per-event/source counters and a random ID generated at install
-- **Never sent**: hostname, file paths, message contents, or anything identifying
-- **Opt out**: Settings → Stats tab → "Share anonymous stats" toggle
+- The only data sent is cumulative per-event/source counters and a random ID generated at install
+- Hostnames, file paths, message contents, and anything else identifying are **never sent**
+- Turn it off with the **Share anonymous stats** toggle in Settings → Stats tab
 
 ## 🤔 Why a custom notification window?
 
-OS-native toasts only *show* a notification. Agent Toast makes the notification part of your **workflow**:
+An OS-native toast's job ends the moment it pops up. Agent Toast's notifications also handle the trip back to your terminal.
 
 <p align="center">
   <img src=".github/media/toast.en.png" width="452" alt="Agent Toast notification toast">
 </p>
 
-- **One click back to that terminal** — clicking the toast activates the exact terminal window that raised it
-- **Auto-dismiss on return** — the toast closes itself when focus returns to the terminal
-- **Skips when unneeded** — no toast if you're already looking at that terminal
+- Clicking the toast activates the exact terminal window that raised it
+- The toast closes itself when focus returns to the terminal
+- If you're already looking at that terminal, no toast appears in the first place
 
-A dedicated window enables this window-aware smart behavior that native toasts can't do.
+This behavior requires knowing which window raised each notification, which is why Agent Toast uses its own notification window instead of native toasts.
 
 ## 🔍 Comparison with Other Notification Tools
 
