@@ -1,12 +1,42 @@
 <script setup lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { Activity, BellOff, Eye } from "lucide-vue-next";
+import { Activity, BellOff, Eye, Globe } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { CounterSet, Stats } from "../types";
+import type { CounterSet, GlobalStats, Stats } from "../types";
+import { Switch } from "./ui/switch";
 
 const { t } = useI18n();
 const stats = ref<Stats | null>(null);
+
+const globalEnabled = ref(true);
+const globalStats = ref<GlobalStats | null>(null);
+const globalLoading = ref(false);
+const globalError = ref(false);
+
+async function loadGlobal() {
+  if (!globalEnabled.value) return;
+  globalLoading.value = true;
+  globalError.value = false;
+  try {
+    globalStats.value = await invoke<GlobalStats>("get_global_stats");
+  } catch {
+    globalError.value = true;
+  } finally {
+    globalLoading.value = false;
+  }
+}
+
+async function onToggleGlobal(v: boolean) {
+  globalEnabled.value = v;
+  try {
+    await invoke("set_global_stats_enabled", { enabled: v });
+  } catch {
+    /* ignore */
+  }
+  if (v) await loadGlobal();
+  else globalStats.value = null;
+}
 
 onMounted(async () => {
   try {
@@ -14,6 +44,12 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  try {
+    globalEnabled.value = await invoke<boolean>("get_global_stats_enabled");
+  } catch {
+    /* ignore */
+  }
+  await loadGlobal();
 });
 
 function emptyTotals(): CounterSet {
@@ -333,6 +369,48 @@ const sourceBars = computed(() => bars("source"));
             />
           </div>
         </template>
+
+        <!-- global: anonymous worldwide aggregate -->
+        <hr class="my-4 border-dashed border-border/65" />
+        <div class="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground/80">
+          // {{ t("setup.stat_sec_global") }}
+        </div>
+        <div class="flex flex-col gap-1.5 text-[13px]">
+          <div
+            v-if="globalEnabled && globalLoading"
+            class="h-4 w-2/3 animate-pulse rounded bg-muted-foreground/15 motion-reduce:animate-none"
+          />
+          <div
+            v-else-if="globalEnabled && globalStats"
+            class="flex items-start gap-2.5 leading-snug"
+          >
+            <Globe class="mt-0.5 size-3.5 shrink-0 text-event-default" />
+            <span>{{
+              t("setup.stat_global_insight", {
+                shown: fmt(globalStats.totals.shown),
+              })
+            }}</span>
+          </div>
+          <div v-else-if="globalEnabled && globalError" class="text-muted-foreground">
+            # {{ t("setup.stat_global_unavailable") }}
+          </div>
+          <div v-else-if="!globalEnabled" class="text-muted-foreground">
+            # {{ t("setup.stat_global_off") }}
+          </div>
+        </div>
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-xs">{{ t("setup.stat_global_share") }}</div>
+            <div class="text-[11px] leading-snug text-muted-foreground">
+              {{ t("setup.stat_global_share_desc") }}
+            </div>
+          </div>
+          <Switch
+            :model-value="globalEnabled"
+            class="shrink-0"
+            @update:model-value="onToggleGlobal"
+          />
+        </div>
       </div>
     </div>
   </div>

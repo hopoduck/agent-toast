@@ -23,14 +23,32 @@ pub struct CounterSet {
     pub skipped_ratelimit: u64,
 }
 
+/// 글로벌 통계 동기화 상태 — stats.json의 예약 필드 `synced`에 저장된다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncedInfo {
+    pub device_id: String,
+    #[serde(default)]
+    pub last_sync: Option<String>,
+}
+
+/// synced 필드가 예상 못 한 모양이어도 파일 전체를 corrupt 처리하지 않도록
+/// 파싱 실패 시 None으로 강등한다.
+fn lenient_synced<'de, D>(d: D) -> Result<Option<SyncedInfo>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(v.and_then(|v| serde_json::from_value(v).ok()))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stats {
     pub version: u32,
     pub since: String,
     pub counts: HashMap<String, HashMap<String, CounterSet>>,
     pub origin: HashMap<String, CounterSet>,
-    #[serde(default)]
-    pub synced: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "lenient_synced")]
+    pub synced: Option<SyncedInfo>,
 }
 
 impl Stats {
@@ -136,6 +154,8 @@ pub fn save_stats_to(path: &Path, stats: &Stats) -> std::io::Result<()> {
 pub struct StatsManager {
     pub stats: Stats,
     pub dirty: bool,
+    /// 마지막 글로벌 업로드 성공 이후 통계가 바뀌었는지 (디스크 flush와 별개)
+    pub sync_pending: bool,
 }
 
 pub type StatsState = Arc<Mutex<StatsManager>>;
@@ -163,6 +183,7 @@ pub fn create_manager_at(path: &Path) -> StatsState {
     Arc::new(Mutex::new(StatsManager {
         stats: load_stats_from(path),
         dirty: false,
+        sync_pending: false,
     }))
 }
 
@@ -174,6 +195,7 @@ fn with_dirty(state: &StatsState, f: impl FnOnce(&mut Stats)) {
     f(&mut m.stats);
     if m.stats != before {
         m.dirty = true;
+        m.sync_pending = true;
     }
 }
 
@@ -207,6 +229,34 @@ pub fn take_if_dirty(state: &StatsState) -> Option<Stats> {
     }
     m.dirty = false;
     Some(m.stats.clone())
+}
+
+pub fn is_sync_pending(state: &StatsState) -> bool {
+    state.lock().unwrap().sync_pending
+}
+
+/// 업로드용 스냅샷. device_id가 없으면 UUID v4를 생성해 저장(dirty 표시)한다.
+pub fn snapshot_for_sync(state: &StatsState) -> (String, Stats) {
+    let mut m = state.lock().unwrap();
+    if m.stats.synced.is_none() {
+        m.stats.synced = Some(SyncedInfo {
+            device_id: uuid::Uuid::new_v4().to_string(),
+            last_sync: None,
+        });
+        m.dirty = true;
+    }
+    let id = m.stats.synced.as_ref().unwrap().device_id.clone();
+    (id, m.stats.clone())
+}
+
+/// 업로드 성공 기록: last_sync 갱신 + sync_pending 해제.
+pub fn mark_synced(state: &StatsState, when: String) {
+    let mut m = state.lock().unwrap();
+    if let Some(s) = m.stats.synced.as_mut() {
+        s.last_sync = Some(when);
+    }
+    m.sync_pending = false;
+    m.dirty = true;
 }
 
 /// Persist the model to disk if it changed since the last flush.
@@ -298,12 +348,76 @@ mod tests {
         assert_eq!(origin_total, 8);
     }
 
+    // ── SyncedInfo / sync_pending tests ──
+
     #[test]
-    fn serde_roundtrip_preserves_unknown_synced() {
+    fn synced_info_roundtrip() {
+        let mut s = fresh();
+        s.synced = Some(SyncedInfo {
+            device_id: "abc".into(),
+            last_sync: Some("2026-07-02T00:00:00Z".into()),
+        });
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Stats = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.synced.as_ref().unwrap().device_id, "abc");
+    }
+
+    #[test]
+    fn unknown_synced_shape_degrades_to_none() {
+        // 예전/외부에서 온 이상한 synced 값이 있어도 파일 전체를 corrupt 처리하지 않는다.
         let json = r#"{"version":1,"since":"x","counts":{},"origin":{},"synced":{"foo":1}}"#;
         let s: Stats = serde_json::from_str(json).unwrap();
-        let back = serde_json::to_string(&s).unwrap();
-        assert!(back.contains("\"foo\":1"));
+        assert!(s.synced.is_none());
+    }
+
+    #[test]
+    fn record_sets_sync_pending() {
+        let path = temp_path("sync-pending");
+        let state = create_manager_at(&path);
+        assert!(!is_sync_pending(&state));
+        super::record_shown(&state, "task_complete", "claude", false);
+        assert!(is_sync_pending(&state));
+    }
+
+    #[test]
+    fn take_if_dirty_does_not_clear_sync_pending() {
+        let path = temp_path("sync-pending-flush");
+        let state = create_manager_at(&path);
+        super::record_shown(&state, "task_complete", "claude", false);
+        let _ = take_if_dirty(&state); // disk flush
+        assert!(
+            is_sync_pending(&state),
+            "flush must not consume the upload flag"
+        );
+    }
+
+    #[test]
+    fn snapshot_for_sync_generates_stable_device_id() {
+        let path = temp_path("device-id");
+        let state = create_manager_at(&path);
+        let (id1, snap) = snapshot_for_sync(&state);
+        let (id2, _) = snapshot_for_sync(&state);
+        assert_eq!(id1, id2, "id generated once, then reused");
+        assert_eq!(snap.synced.as_ref().unwrap().device_id, id1);
+        assert!(
+            take_if_dirty(&state).is_some(),
+            "new id marks dirty for persistence"
+        );
+    }
+
+    #[test]
+    fn mark_synced_stamps_and_clears_pending() {
+        let path = temp_path("mark-synced");
+        let state = create_manager_at(&path);
+        super::record_shown(&state, "task_complete", "claude", false);
+        let _ = snapshot_for_sync(&state);
+        mark_synced(&state, "2026-07-02T01:00:00Z".into());
+        assert!(!is_sync_pending(&state));
+        let m = state.lock().unwrap();
+        assert_eq!(
+            m.stats.synced.as_ref().unwrap().last_sync.as_deref(),
+            Some("2026-07-02T01:00:00Z")
+        );
     }
 
     use std::path::PathBuf;

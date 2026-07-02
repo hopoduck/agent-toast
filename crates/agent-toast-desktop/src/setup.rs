@@ -1300,6 +1300,58 @@ pub fn write_theme(theme: &str) -> Result<(), String> {
     std::fs::write(&path, updated).map_err(|e| e.to_string())
 }
 
+/// settings.json 문자열에서 agent_toast.global_stats_enabled 추출 — 기본 true (옵트아웃).
+fn read_global_stats_from_json(content: &str) -> bool {
+    serde_json::from_str::<Value>(content)
+        .ok()
+        .and_then(|root| root["agent_toast"]["global_stats_enabled"].as_bool())
+        .unwrap_or(true)
+}
+
+/// settings.json 문자열에 agent_toast.global_stats_enabled 를 설정(나머지 키 보존).
+fn set_global_stats_in_json(content: &str, enabled: bool) -> String {
+    let mut root: Value =
+        serde_json::from_str(content).unwrap_or_else(|_| Value::Object(Default::default()));
+    if !root.is_object() {
+        root = Value::Object(Default::default());
+    }
+    let obj = root.as_object_mut().unwrap();
+    let at = obj
+        .entry("agent_toast")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !at.is_object() {
+        *at = Value::Object(Default::default());
+    }
+    at.as_object_mut()
+        .unwrap()
+        .insert("global_stats_enabled".into(), Value::Bool(enabled));
+    serde_json::to_string_pretty(&root).unwrap_or_else(|_| content.to_string())
+}
+
+/// settings.json에서 global_stats_enabled 읽기 — 파일 없음/실패 시 true.
+pub fn read_global_stats_enabled() -> bool {
+    match std::fs::read_to_string(settings_path()) {
+        Ok(content) => read_global_stats_from_json(&content),
+        Err(_) => true,
+    }
+}
+
+#[tauri::command]
+pub fn get_global_stats_enabled() -> bool {
+    read_global_stats_enabled()
+}
+
+#[tauri::command]
+pub fn set_global_stats_enabled(enabled: bool) -> Result<(), String> {
+    let path = settings_path();
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let updated = set_global_stats_in_json(&content, enabled);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&path, updated).map_err(|e| e.to_string())
+}
+
 /// 알림 창이 렌더링에 사용하는 토스트 디자인 축 값.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToastStyle {
@@ -1437,6 +1489,37 @@ fn extract_message(cmd: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── global_stats_enabled tests ──
+
+    #[test]
+    fn global_stats_default_true_on_missing() {
+        assert!(read_global_stats_from_json("{}"));
+        assert!(read_global_stats_from_json("not json"));
+    }
+
+    #[test]
+    fn global_stats_reads_stored_false() {
+        let json = r#"{"agent_toast":{"global_stats_enabled":false}}"#;
+        assert!(!read_global_stats_from_json(json));
+    }
+
+    #[test]
+    fn set_global_stats_preserves_other_keys() {
+        let json = r#"{"hooks":{"Stop":[]},"agent_toast":{"theme":"dark"}}"#;
+        let updated = set_global_stats_in_json(json, false);
+        assert!(!read_global_stats_from_json(&updated));
+        let v: serde_json::Value = serde_json::from_str(&updated).unwrap();
+        assert_eq!(v["agent_toast"]["theme"], "dark");
+        assert!(v["hooks"]["Stop"].is_array());
+    }
+
+    #[test]
+    fn set_global_stats_creates_structure_from_empty() {
+        let updated = set_global_stats_in_json("", true);
+        let v: serde_json::Value = serde_json::from_str(&updated).unwrap();
+        assert_eq!(v["agent_toast"]["global_stats_enabled"], true);
+    }
 
     // ── extract_message tests ──
 

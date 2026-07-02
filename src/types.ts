@@ -87,7 +87,22 @@ export interface Stats {
   counts: Record<string, Record<string, CounterSet>>;
   /** "local" | "remote" -> counters */
   origin: Record<string, CounterSet>;
-  synced: unknown | null;
+  synced: SyncedInfo | null;
+}
+
+export interface SyncedInfo {
+  device_id: string;
+  last_sync: string | null;
+}
+
+export interface GlobalStats {
+  devices_total: number;
+  devices_active_30d: number;
+  totals: CounterSet;
+  /** event -> source -> counters, same shape as local */
+  counts: Record<string, Record<string, CounterSet>>;
+  origin: Record<string, CounterSet>;
+  generated_at: string;
 }
 
 export interface ToastStyle {

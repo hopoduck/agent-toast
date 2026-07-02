@@ -17,6 +17,7 @@
   <a href="https://github.com/hopoduck/agent-toast/releases"><img src="https://img.shields.io/github/v/release/hopoduck/agent-toast?style=flat-square" alt="Release"></a>
   <a href="https://github.com/hopoduck/agent-toast/blob/master/LICENSE"><img src="https://img.shields.io/github/license/hopoduck/agent-toast?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fagent-toast-stats.hopoduck.com%2Fv1%2Fbadge&style=flat-square" alt="Toasts shown worldwide">
 </p>
 
 <p align="center">
@@ -123,6 +124,14 @@ agent-toast-send init --url http://<desktop-ip>:38787 --dynamic [--hostname "pro
 To uninstall, run `agent-toast-send uninstall` — only removes agent-toast related hooks; all other hooks are preserved.
 
 </details>
+
+## 🌍 Global stats (anonymous)
+
+The app anonymously uploads notification counters (shown/clicked/closed counts) to an aggregation server and shows worldwide totals in the stats tab and the badge above.
+
+- **Sent**: cumulative per-event/source counters and a random ID generated at install
+- **Never sent**: hostname, file paths, message contents, or anything identifying
+- **Opt out**: Settings → Stats tab → "Share anonymous stats" toggle
 
 ## 🤔 Why a custom notification window?
 

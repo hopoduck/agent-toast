@@ -1,6 +1,7 @@
 mod changelog;
 pub mod cli;
 mod fonts;
+mod global_sync;
 pub mod http_server;
 mod notification;
 pub mod pipe;
@@ -413,7 +414,10 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             get_tailscale_hostname,
             updater::mark_update_pending,
             updater::snooze_update,
-            changelog::get_releases
+            changelog::get_releases,
+            global_sync::get_global_stats,
+            setup::get_global_stats_enabled,
+            setup::set_global_stats_enabled
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -529,13 +533,18 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             // Check for updates in background (once at startup)
             updater::check_for_updates(&handle, &state);
 
+            // 글로벌 통계: 시작 시 1회 무조건 업로드 (dev 빌드/설정 off면 내부에서 no-op)
+            global_sync::sync(&handle.state::<stats::StatsState>().inner().clone(), true);
+
             // Re-check periodically so a long-running app still notices new releases
             {
                 let timer_handle = handle.clone();
                 let timer_state = state.clone();
+                let timer_stats = handle.state::<stats::StatsState>().inner().clone();
                 std::thread::spawn(move || loop {
                     std::thread::sleep(std::time::Duration::from_secs(60 * 60));
                     updater::check_for_updates(&timer_handle, &timer_state);
+                    global_sync::sync(&timer_stats, false);
                 });
             }
 

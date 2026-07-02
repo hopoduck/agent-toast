@@ -17,6 +17,7 @@
   <a href="https://github.com/hopoduck/agent-toast/releases"><img src="https://img.shields.io/github/v/release/hopoduck/agent-toast?style=flat-square" alt="Release"></a>
   <a href="https://github.com/hopoduck/agent-toast/blob/master/LICENSE"><img src="https://img.shields.io/github/license/hopoduck/agent-toast?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Windows-blue?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fagent-toast-stats.hopoduck.com%2Fv1%2Fbadge&style=flat-square" alt="Toasts shown worldwide">
 </p>
 
 <p align="center">
@@ -123,6 +124,14 @@ agent-toast-send init --url http://<desktop-ip>:38787 --dynamic [--hostname "pro
 해제는 `agent-toast-send uninstall` — agent-toast 관련 훅만 제거하고 다른 훅은 보존합니다.
 
 </details>
+
+## 🌍 글로벌 통계 (익명)
+
+앱은 알림 카운터(표시·클릭·닫힘 횟수)를 익명으로 집계 서버에 업로드해, 전 세계 합계를 통계 탭과 상단 뱃지에 보여줍니다.
+
+- **전송되는 것**: 이벤트·소스별 누적 카운터, 설치 시 생성되는 랜덤 ID
+- **전송되지 않는 것**: 호스트명, 파일 경로, 메시지 내용 등 개인 식별 정보 일체
+- **끄기**: 설정 → 통계 탭 → "익명 통계 공유" 토글
 
 ## 🤔 왜 커스텀 알림 창인가요?
 
