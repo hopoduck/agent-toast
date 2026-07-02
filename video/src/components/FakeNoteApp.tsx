@@ -14,9 +14,11 @@ type Props = {
   style?: React.CSSProperties;
   /** 다크 웜톤 테마 — 먹빛 무대와 톤을 맞춰 흰 창이 붕 뜨지 않게 한다. */
   dark?: boolean;
+  /** 사이드바 상단 라벨 (로케일별) */
+  notesLabel?: string;
 };
 
-export const FakeNoteApp: React.FC<Props> = ({ notes, title, body, caretVisible, style, dark = false }) => {
+export const FakeNoteApp: React.FC<Props> = ({ notes, title, body, caretVisible, style, dark = false, notesLabel = "📝 메모" }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const blinkOn = Math.floor(frame / (fps * 0.5)) % 2 === 0;
@@ -76,7 +78,7 @@ export const FakeNoteApp: React.FC<Props> = ({ notes, title, body, caretVisible,
     >
       {/* Sidebar */}
       <div style={{ width: 260, background: c.sidebar, padding: "20px 12px" }}>
-        <div style={{ fontSize: 13, color: c.sidebarLabel, padding: "0 8px 12px", fontWeight: 600 }}>📝 메모</div>
+        <div style={{ fontSize: 13, color: c.sidebarLabel, padding: "0 8px 12px", fontWeight: 600 }}>{notesLabel}</div>
         {notes.map((n, i) => (
           <div
             key={i}

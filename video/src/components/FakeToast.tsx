@@ -13,11 +13,14 @@ type Props = {
   progress?: number;
   /** "보기" 버튼 호버 상태 */
   hovered?: boolean;
+  /** "보기" 버튼 라벨 (로케일별) */
+  viewLabel?: string;
+  /** "닫기" 버튼 라벨 (로케일별) */
+  closeLabel?: string;
 };
 
-// App.vue 의 eventStyles.success 그대로
+// App.vue 의 eventStyles.success 그대로 (기본값 bar:none — 왼쪽 액센트 바 없음)
 const styles = {
-  accent: "bg-gradient-to-b from-event-success to-event-success-deep",
   icon: "bg-event-success/20 text-event-success",
   label: "text-event-success",
   // App.vue success viewBtn: bg-event-success text-zinc-950 border-transparent hover:bg-event-success-deep
@@ -36,6 +39,8 @@ export const FakeToast: React.FC<Props> = ({
   message,
   progress = 1,
   hovered = false,
+  viewLabel = "보기",
+  closeLabel = "닫기",
 }) => {
   return (
     // App.vue: relative h-screen flex rounded-xl overflow-hidden select-none
@@ -60,8 +65,7 @@ export const FakeToast: React.FC<Props> = ({
         }}
       />
 
-      {/* Accent bar — App.vue: relative z-10 w-1 shrink-0 + styles.accent */}
-      <div className={"relative z-10 w-1 shrink-0 " + styles.accent} />
+      {/* 왼쪽 액센트 바 없음 (bar:none 기본값) — App.vue 와 동일 */}
 
       {/* Content — App.vue: relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-[var(--toast-text-shadow)] */}
       <div className="relative z-10 flex-1 flex flex-col justify-between p-3 min-w-0 text-shadow-[var(--toast-text-shadow)]">
@@ -136,7 +140,7 @@ export const FakeToast: React.FC<Props> = ({
             }
           >
             <ChevronRight size={14} />
-            보기
+            {viewLabel}
           </button>
           {/* Close button — App.vue: flex-1 py-1.5 text-[13px] font-medium rounded-md
               bg-[toast-fg 7%] text-toast-fg border border-toast-border */}
@@ -144,7 +148,7 @@ export const FakeToast: React.FC<Props> = ({
             type="button"
             className="flex-1 py-1.5 text-[13px] font-medium rounded-md bg-[color-mix(in_oklch,var(--toast-fg)_7%,transparent)] text-toast-fg border border-toast-border"
           >
-            닫기
+            {closeLabel}
           </button>
         </div>
       </div>

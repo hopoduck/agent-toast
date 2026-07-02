@@ -6,8 +6,9 @@ import { Scene2Notes } from "./scenes/Scene2Notes";
 import { Scene3Notification } from "./scenes/Scene3Notification";
 import { Scene4Return } from "./scenes/Scene4Return";
 import { SCENE_FRAMES, TRANSITION_FRAMES, scaleFrames } from "./timing";
+import type { Locale } from "./locale";
 
-export const IntroVideo: React.FC = () => {
+export const IntroVideo: React.FC<{ locale?: Locale }> = ({ locale = "ko" }) => {
   const { fps } = useVideoConfig();
   const dur = (framesAtBase: number) => scaleFrames(framesAtBase, fps);
   const tdur = dur(TRANSITION_FRAMES);
@@ -19,19 +20,19 @@ export const IntroVideo: React.FC = () => {
   return (
     <TransitionSeries>
       <TransitionSeries.Sequence durationInFrames={dur(SCENE_FRAMES.scene1)}>
-        <Scene1Terminal />
+        <Scene1Terminal locale={locale} />
       </TransitionSeries.Sequence>
       {crossfade}
       <TransitionSeries.Sequence durationInFrames={dur(SCENE_FRAMES.scene2)}>
-        <Scene2Notes />
+        <Scene2Notes locale={locale} />
       </TransitionSeries.Sequence>
       {crossfade}
       <TransitionSeries.Sequence durationInFrames={dur(SCENE_FRAMES.scene3)}>
-        <Scene3Notification />
+        <Scene3Notification locale={locale} />
       </TransitionSeries.Sequence>
       {crossfade}
       <TransitionSeries.Sequence durationInFrames={dur(SCENE_FRAMES.scene4)}>
-        <Scene4Return />
+        <Scene4Return locale={locale} />
       </TransitionSeries.Sequence>
     </TransitionSeries>
   );

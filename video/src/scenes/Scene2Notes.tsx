@@ -3,22 +3,23 @@ import { FakeNoteApp } from "../components/FakeNoteApp";
 import { Stage } from "../components/Stage";
 import { Reveal } from "../components/Reveal";
 import { useFrameScaler, useReveal } from "../timing";
+import { STRINGS, type Locale } from "../locale";
 
-const BODY_FULL = "이번 주에 정리할 내용\n\n- 리팩토링 결과 검토\n- 다음 스프린트 계획\n- 회의 일정 조율";
 const BODY_TYPING_START = 60;  // frame@120fps
 const BODY_TYPING_END = 400;   // frame@120fps
 
-export const Scene2Notes: React.FC = () => {
+export const Scene2Notes: React.FC<{ locale?: Locale }> = ({ locale = "ko" }) => {
   const frame = useCurrentFrame();
   const f = useFrameScaler();
+  const s = STRINGS[locale];
 
   const typedCount = Math.floor(
-    interpolate(frame, [f(BODY_TYPING_START), f(BODY_TYPING_END)], [0, BODY_FULL.length], {
+    interpolate(frame, [f(BODY_TYPING_START), f(BODY_TYPING_END)], [0, s.noteBody.length], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     }),
   );
-  const typedBody = BODY_FULL.slice(0, typedCount);
+  const typedBody = s.noteBody.slice(0, typedCount);
 
   const noteAppOpacity = interpolate(frame, [0, f(48)], [0, 1], { extrapolateRight: "clamp" });
   const noteAppTranslate = interpolate(frame, [0, f(48)], [20, 0], { extrapolateRight: "clamp" });
@@ -54,11 +55,9 @@ export const Scene2Notes: React.FC = () => {
           <Reveal
             y={capText.y}
             opacity={capText.opacity}
-            style={{ fontFamily: "var(--font-sans)", fontSize: 72, fontWeight: 900, letterSpacing: -1, lineHeight: 1.1, color: "#F5F2EA" }}
+            style={{ fontFamily: "var(--font-sans)", fontSize: locale === "en" ? 56 : 72, fontWeight: 900, letterSpacing: -1, lineHeight: locale === "en" ? 1.02 : 1.1, color: "#F5F2EA", whiteSpace: locale === "en" ? "normal" : "pre-line", ...(locale === "en" ? { maxWidth: 300 } : {}) }}
           >
-            다른 일을
-            <br />
-            한다
+            {s.cap2}
           </Reveal>
         </div>
       </AbsoluteFill>
@@ -76,16 +75,12 @@ export const Scene2Notes: React.FC = () => {
       >
         <div style={{ transform: "scale(0.78)", transformOrigin: "right center" }}>
           <FakeNoteApp
-            notes={[
-              { title: "주간 정리", active: true },
-              { title: "회의록 — 03/12" },
-              { title: "아이디어 노트" },
-              { title: "독서 메모" },
-            ]}
-            title="주간 정리"
+            notes={s.notes.map((title, i) => ({ title, active: i === 0 }))}
+            title={s.noteTitle}
             body={typedBody}
             caretVisible={frame > f(BODY_TYPING_START) && frame < f(BODY_TYPING_END + 120)}
             dark
+            notesLabel={s.notesLabel}
           />
         </div>
       </AbsoluteFill>

@@ -4,25 +4,26 @@ import { FakeTerminal, type TerminalLine } from "../components/FakeTerminal";
 import { Stage } from "../components/Stage";
 import { Reveal } from "../components/Reveal";
 import { useFrameScaler, useReveal } from "../timing";
+import { STRINGS, type Locale } from "../locale";
 
-const USER_INPUT = "ChatPanel 컴포넌트 리팩터링좀 해줘.";
 const TYPING_START = 40;   // frame@120fps
-const TYPING_END = 280;    // frame@120fps — 240프레임 동안 21자, 자연스러운 타이핑 속도
+const TYPING_END = 280;    // frame@120fps — 240프레임 동안 타이핑 (문자 수와 무관하게 같은 시간에 완결)
 const ENTER_FRAME = 300;
 const RESPONSE_START = 320;
 
-export const Scene1Terminal: React.FC = () => {
+export const Scene1Terminal: React.FC<{ locale?: Locale }> = ({ locale = "ko" }) => {
   const frame = useCurrentFrame();
   const f = useFrameScaler();
+  const s = STRINGS[locale];
 
   // Typed characters
   const typedCount = Math.floor(
-    interpolate(frame, [f(TYPING_START), f(TYPING_END)], [0, USER_INPUT.length], {
+    interpolate(frame, [f(TYPING_START), f(TYPING_END)], [0, s.userInput.length], {
       extrapolateLeft: "clamp",
       extrapolateRight: "clamp",
     }),
   );
-  const typedText = USER_INPUT.slice(0, typedCount);
+  const typedText = s.userInput.slice(0, typedCount);
 
   const showResponse = frame >= f(RESPONSE_START);
 
@@ -30,14 +31,11 @@ export const Scene1Terminal: React.FC = () => {
     { prefix: "❯", text: typedText },
   ];
   if (showResponse) {
-    lines.push({
-      text: "ChatPanel 컴포넌트 현황 파악부터 하겠습니다. Explore 에이전트로 구조랑 의존성 쫙 훑어볼게요.",
-      color: "#a3a3a3",
-    });
+    lines.push({ text: s.response, color: "#a3a3a3" });
   }
   // Scene1 끝부분(~frame 380@120fps 이후)에 Explore 에이전트 호출 줄을 미리 넣어 Scene2 배경과 자연 전환
   if (frame >= f(380)) {
-    lines.push({ text: "● Explore(ChatPanel 컴포넌트 구조 탐색)" });
+    lines.push({ text: s.exploreCall });
   }
 
   // Subtle fade-in
@@ -76,9 +74,9 @@ export const Scene1Terminal: React.FC = () => {
           <Reveal
             y={capText.y}
             opacity={capText.opacity}
-            style={{ fontFamily: "var(--font-sans)", fontSize: 104, fontWeight: 900, letterSpacing: -1, lineHeight: 1.05, color: "#F5F2EA" }}
+            style={{ fontFamily: "var(--font-sans)", fontSize: locale === "en" ? 56 : 104, fontWeight: 900, letterSpacing: -1, lineHeight: locale === "en" ? 1.02 : 1.05, color: "#F5F2EA" }}
           >
-            맡긴다
+            {s.cap1}
           </Reveal>
         </div>
       </AbsoluteFill>

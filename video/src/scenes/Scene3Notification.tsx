@@ -6,13 +6,13 @@ import { FakeCursor } from "../components/FakeCursor";
 import { Stage } from "../components/Stage";
 import { Reveal } from "../components/Reveal";
 import { useFrameScaler, useReveal } from "../timing";
+import { STRINGS, type Locale } from "../locale";
 
-const FULL_BODY = "이번 주에 정리할 내용\n\n- 리팩토링 결과 검토\n- 다음 스프린트 계획\n- 회의 일정 조율";
-
-export const Scene3Notification: React.FC = () => {
+export const Scene3Notification: React.FC<{ locale?: Locale }> = ({ locale = "ko" }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const f = useFrameScaler();
+  const s = STRINGS[locale];
 
   // Toast slide-in (frames 0-15)
   const toastSpring = spring({
@@ -93,9 +93,9 @@ export const Scene3Notification: React.FC = () => {
           <Reveal
             y={capText.y}
             opacity={capText.opacity}
-            style={{ fontFamily: "var(--font-sans)", fontSize: 104, fontWeight: 900, letterSpacing: -1, lineHeight: 1.05, color: "#F5F2EA" }}
+            style={{ fontFamily: "var(--font-sans)", fontSize: locale === "en" ? 56 : 104, fontWeight: 900, letterSpacing: -1, lineHeight: locale === "en" ? 1.02 : 1.05, color: "#F5F2EA", ...(locale === "en" ? { maxWidth: 300 } : {}) }}
           >
-            알린다
+            {s.cap3}
           </Reveal>
         </div>
       </AbsoluteFill>
@@ -104,15 +104,11 @@ export const Scene3Notification: React.FC = () => {
       <AbsoluteFill style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", paddingRight: 44 }}>
         <div style={{ transform: "scale(0.78)", transformOrigin: "right center" }}>
           <FakeNoteApp
-            notes={[
-              { title: "주간 정리", active: true },
-              { title: "회의록 — 03/12" },
-              { title: "아이디어 노트" },
-              { title: "독서 메모" },
-            ]}
-            title="주간 정리"
-            body={FULL_BODY}
+            notes={s.notes.map((title, i) => ({ title, active: i === 0 }))}
+            title={s.noteTitle}
+            body={s.noteBody}
             dark
+            notesLabel={s.notesLabel}
           />
         </div>
       </AbsoluteFill>
@@ -128,11 +124,13 @@ export const Scene3Notification: React.FC = () => {
         }}
       >
         <FakeToast
-          eventLabel="작업 완료"
-          windowTitle="Claude Code"
-          message="작업이 완료되었습니다"
+          eventLabel={s.toastLabel}
+          windowTitle={s.toastTitle}
+          message={s.toastMessage}
           progress={progress}
           hovered={isHovering}
+          viewLabel={s.toastView}
+          closeLabel={s.toastDismiss}
         />
       </div>
 

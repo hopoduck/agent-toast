@@ -9,8 +9,8 @@
 <h1 align="center">Agent Toast</h1>
 
 <p align="center">
-  <strong>Stop watching the terminal while AI works</strong><br>
-  Get notified the moment your agent is done
+  <strong>No more babysitting the terminal</strong><br>
+  Agent Toast pings you the instant your agent needs you, then clicks you right back
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src=".github/media/intro.webp" width="720" alt="Agent Toast Preview">
+  <img src=".github/media/intro.en.webp" width="720" alt="Agent Toast Preview">
 </p>
 
 ## ✨ Features
@@ -32,8 +32,16 @@
 - **Multi-Monitor Support** - Display notifications on any corner of your preferred monitor with DPI scaling
 - **Notification Sound** - System alert sound so you never miss an event (toggleable in settings)
 - **Light/Dark Theme** - Toast design follows your system theme; hover to pause auto-dismiss
+- **Toast Design Customization** - Tune bar, border, background, effects, and density (comfortable/compact) plus sans/mono system fonts with a live preview (D2Coding bundled)
+- **Notification Stats** - Aggregated counts and insights for shown / clicked / auto-dismissed events
 - **Multilingual UI** - Korean/English support
 - **Auto Update** - New version notifications with one-click update
+
+## 🖼️ Screenshots
+
+|                               Toast Design Customization                               |                                    Notification Stats                                    |
+| :-------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------: |
+| <img src=".github/media/settings-design.en.png" width="380" alt="Design settings tab"> | <img src=".github/media/settings-stats.en.png" width="380" alt="Notification stats tab"> |
 
 ## 🔌 Supported Platforms
 
@@ -116,6 +124,20 @@ To uninstall, run `agent-toast-send uninstall` — only removes agent-toast rela
 
 </details>
 
+## 🤔 Why a custom notification window?
+
+OS-native toasts only *show* a notification. Agent Toast makes the notification part of your **workflow**:
+
+<p align="center">
+  <img src=".github/media/toast.en.png" width="452" alt="Agent Toast notification toast">
+</p>
+
+- **One click back to that terminal** — clicking the toast activates the exact terminal window that raised it
+- **Auto-dismiss on return** — the toast closes itself when focus returns to the terminal
+- **Skips when unneeded** — no toast if you're already looking at that terminal
+
+A dedicated window enables this window-aware smart behavior that native toasts can't do.
+
 ## 🔍 Comparison with Other Notification Tools
 
 |                                  | **Agent Toast**                 | [**Toasty**](https://github.com/shanselman/toasty) | [**claude-code-notification**](https://github.com/wyattjoh/claude-code-notification) | **PowerShell Script** | [**ntfy.sh**](https://ntfy.sh) |
@@ -124,6 +146,8 @@ To uninstall, run `agent-toast-send uninstall` — only removes agent-toast rela
 | **Platform**                     | Windows                         | Windows                                            | Windows · macOS · Linux                                                              | Windows               | All (incl. mobile)             |
 | **Installation**                 | Installer / Portable            | CLI binary                                         | CLI binary                                                                           | Copy script           | One-line curl                  |
 | **GUI Settings**                 | ✅ Settings window               | ❌ CLI only                                         | ❌ CLI only                                                                           | ❌ Manual edit         | ❌ Manual edit                  |
+| **Design Customization**         | ✅ Bar, fonts, density, etc.     | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
+| **Notification Stats**           | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
 | **Smart Notifications**¹         | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
 | **Click → Activate Terminal**    | ✅                               | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |
 | **Multi-Monitor · Position**     | ✅ 4 corners + monitor           | ❌                                                  | ❌                                                                                    | ❌                     | ❌                              |

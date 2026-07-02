@@ -9,6 +9,7 @@ import { Scene1Terminal } from "./scenes/Scene1Terminal";
 import { Scene2Notes } from "./scenes/Scene2Notes";
 import { Scene3Notification } from "./scenes/Scene3Notification";
 import { Scene4Return } from "./scenes/Scene4Return";
+import { OgImage } from "./OgImage";
 import { introTotalFrames } from "./timing";
 
 // 프로덕션 120fps / 디버그 30fps. 씬 타이밍은 모두 fps-relative 라 두 fps 에서 동일 시간으로 재생된다.
@@ -25,6 +26,17 @@ export const RemotionRoot: React.FC = () => {
         fps={PROD_FPS}
         width={1280}
         height={720}
+        defaultProps={{ locale: "ko" as const }}
+      />
+      {/* 영문판 — 같은 컴포넌트에 locale="en". `../.github/media/intro.en.webp` 소스. */}
+      <Composition
+        id="IntroVideoEn"
+        component={IntroVideo}
+        durationInFrames={introTotalFrames(PROD_FPS)}
+        fps={PROD_FPS}
+        width={1280}
+        height={720}
+        defaultProps={{ locale: "en" as const }}
       />
       {/* 디버그 프리뷰: 30fps(프레임 수 1/4) — `pnpm render:debug` 가 --scale=0.5 와 함께 렌더.
           레이아웃은 px 고정이라 width/height 는 1280x720 그대로 두고 해상도는 CLI scale 로 낮춘다. */}
@@ -35,6 +47,7 @@ export const RemotionRoot: React.FC = () => {
         fps={DEBUG_FPS}
         width={1280}
         height={720}
+        defaultProps={{ locale: "ko" as const }}
       />
       <Composition
         id="Scene1Terminal"
@@ -67,6 +80,25 @@ export const RemotionRoot: React.FC = () => {
         fps={120}
         width={1280}
         height={720}
+      />
+      {/* OG/소셜 프리뷰 정적 이미지 — 같은 컴포넌트, 두 규격.
+          `pnpm exec remotion still src/Root.tsx OgImage   ../.github/media/og.png`
+          `pnpm exec remotion still src/Root.tsx OgImageGh ../.github/media/og-github.png` */}
+      <Composition
+        id="OgImage"
+        component={OgImage}
+        durationInFrames={1}
+        fps={1}
+        width={1200}
+        height={630}
+      />
+      <Composition
+        id="OgImageGh"
+        component={OgImage}
+        durationInFrames={1}
+        fps={1}
+        width={1280}
+        height={640}
       />
       <Composition
         id="DebugCursor"
