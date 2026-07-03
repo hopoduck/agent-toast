@@ -16,9 +16,21 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { invoke } from "@tauri-apps/api/core";
-import { Eye, MonitorDot, SlidersHorizontal } from "lucide-vue-next";
-import { onMounted, ref } from "vue";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  Eye,
+  FolderOpen,
+  MonitorDot,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  Square,
+} from "lucide-vue-next";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { toast } from "vue-sonner";
 import type { HookConfig, MonitorInfo } from "../types";
 
 const { t, locale } = useI18n();
@@ -43,13 +55,78 @@ const emit = defineEmits<{
 
 const monitors = ref<MonitorInfo[]>([]);
 
+const previewPlaying = ref(false);
+let unlistenPreviewEnded: UnlistenFn | undefined;
+
 onMounted(async () => {
   try {
     monitors.value = await invoke<MonitorInfo[]>("get_monitor_list");
   } catch (e) {
     console.error("Failed to get monitor list:", e);
   }
+  // 재생이 끝까지 가면 백엔드가 보내는 이벤트로 토글 버튼을 ▶로 복귀
+  unlistenPreviewEnded = await getCurrentWebviewWindow().listen(
+    "sound-preview-ended",
+    () => {
+      previewPlaying.value = false;
+    },
+  );
 });
+
+onUnmounted(() => {
+  unlistenPreviewEnded?.();
+  if (previewPlaying.value) {
+    previewPlaying.value = false;
+    invoke("stop_notification_sound");
+  }
+});
+
+const soundFileName = computed(() => {
+  const p = config.value.notification_sound_file;
+  if (!p) return null;
+  return p.split(/[\\/]/).pop() ?? p;
+});
+
+async function onBrowseSound() {
+  const selected = await open({
+    multiple: false,
+    filters: [
+      {
+        name: t("general.sound_file_filter"),
+        extensions: ["mp3", "wav", "flac", "ogg", "aac", "wma"],
+      },
+    ],
+  });
+  if (typeof selected !== "string") return;
+  try {
+    const stored = await invoke<string>("copy_notification_sound_file", {
+      path: selected,
+    });
+    config.value.notification_sound_file = stored;
+  } catch (e) {
+    toast.error(t("general.sound_copy_error", { msg: String(e) }));
+  }
+}
+
+async function onPreviewSound() {
+  if (previewPlaying.value) {
+    previewPlaying.value = false;
+    await invoke("stop_notification_sound");
+    return;
+  }
+  previewPlaying.value = true;
+  await invoke("preview_notification_sound", {
+    path: config.value.notification_sound_file,
+  });
+}
+
+function onResetSound() {
+  config.value.notification_sound_file = null;
+  if (previewPlaying.value) {
+    previewPlaying.value = false;
+    invoke("stop_notification_sound");
+  }
+}
 </script>
 
 <template>
@@ -207,6 +284,43 @@ onMounted(async () => {
         <div class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100">
           <span class="text-sm font-medium text-foreground">{{ t("general.sound") }}</span>
           <Switch v-model="config.notification_sound" />
+        </div>
+
+        <!-- Sound file (visible only while sound is on) -->
+        <div
+          v-if="config.notification_sound"
+          class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100"
+        >
+          <div class="flex flex-col gap-0.5 min-w-0 pr-2">
+            <span class="text-sm font-medium text-foreground">{{ t("general.sound_file") }}</span>
+            <span class="text-[11px] text-muted-foreground leading-tight truncate">
+              {{ soundFileName ?? t("general.sound_file_default") }}
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-7"
+              :title="previewPlaying ? t('general.sound_stop') : t('general.sound_preview')"
+              @click="onPreviewSound"
+            >
+              <component :is="previewPlaying ? Square : Play" />
+            </Button>
+            <Button
+              v-if="config.notification_sound_file"
+              variant="ghost"
+              size="icon"
+              class="size-7"
+              :title="t('general.sound_reset')"
+              @click="onResetSound"
+            >
+              <RotateCcw />
+            </Button>
+            <Button variant="outline" size="sm" class="h-7 text-xs" @click="onBrowseSound">
+              <FolderOpen /> {{ t("general.sound_browse") }}
+            </Button>
+          </div>
         </div>
 
         <!-- Auto start -->

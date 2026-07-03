@@ -47,6 +47,7 @@ export interface HookConfig {
   auto_dismiss_seconds: number;
   notification_position: string;
   notification_sound: boolean;
+  notification_sound_file: string | null;
   notification_monitor: string;
   locale: string;
   auto_start: boolean;

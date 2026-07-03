@@ -255,6 +255,21 @@ fn test_notification(app: AppHandle, title: Option<String>, message: Option<Stri
 }
 
 #[tauri::command]
+fn preview_notification_sound(app: AppHandle, path: Option<String>) {
+    use tauri::Emitter;
+    // 저장 전 선택도 미리 들을 수 있게 경로를 직접 받는다 (None = 시스템 기본음)
+    // 재생이 끝까지 가면 setup 창의 토글 버튼을 ▶로 되돌리는 이벤트를 보낸다
+    sound::preview(path.as_deref(), move || {
+        let _ = app.emit_to("setup", "sound-preview-ended", ());
+    });
+}
+
+#[tauri::command]
+fn stop_notification_sound() {
+    sound::stop_playback();
+}
+
+#[tauri::command]
 async fn open_settings(app: AppHandle, tab: Option<String>) {
     let app_clone = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -384,17 +399,26 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(mgr_state.clone())
         .manage(http_state)
         .manage(stats_state.clone())
+        .on_window_event(|window, event| {
+            // 설정 창이 닫히면 미리듣기 재생도 정지
+            if window.label() == "setup" && matches!(event, tauri::WindowEvent::Destroyed) {
+                sound::stop_playback();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             close_notify,
             resize_notify,
             activate_source,
             get_notification_data,
             test_notification,
+            preview_notification_sound,
+            stop_notification_sound,
             get_locale,
             get_theme,
             set_theme,
@@ -409,6 +433,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::open_settings_file,
             setup::is_hook_config_saved,
             setup::get_toast_style,
+            setup::copy_notification_sound_file,
             fonts::list_system_fonts,
             get_monitor_list,
             get_tailscale_hostname,

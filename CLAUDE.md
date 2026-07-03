@@ -92,7 +92,7 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 | `notification.rs` | Notification lifecycle, window creation, 4-corner positioning with DPI scaling, `RateLimiter` (10/s burst 10) |
 | `win32.rs`        | Process tree walking, focus detection, window activation (Windows-only)                             |
 | `setup.rs`        | Settings file I/O (`~/.claude/settings.json`), hook config builder (delegates JSON merge to core)   |
-| `sound.rs`        | System notification sound via `PlaySoundW`                                                          |
+| `sound.rs`        | Notification sound — custom file via WinRT `MediaPlayer` (fallback to system sound), default via `PlaySoundW`; preview play/stop |
 | `updater.rs`      | Auto-update check via GitHub API (`CHECK_INTERVAL_MINUTES = 60`, i.e. hourly; 24h snooze), update notification with snooze/dedupe/sticky |
 | `changelog.rs`    | Extracts changelog from release body markers; `ReleaseInfo` payload sent to frontend                |
 | `fonts.rs`        | Enumerates installed system fonts via GDI `EnumFontFamiliesExW` for the toast font picker           |

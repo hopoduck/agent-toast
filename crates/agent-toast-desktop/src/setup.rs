@@ -1,7 +1,7 @@
 use agent_toast_core::hook_config::{is_agent_toast_cmd, merge_agent_toast_hooks, HookEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Hook configuration as shown in the setup GUI
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -58,6 +58,9 @@ pub struct HookConfig {
     /// 알림 소리 재생 여부
     #[serde(default = "default_notification_sound")]
     pub notification_sound: bool,
+    /// 커스텀 알림 소리 파일 경로 (앱 sounds 폴더 내 복사본). None = 시스템 기본음
+    #[serde(default)]
+    pub notification_sound_file: Option<String>,
     /// 알림 표시 모니터: "primary", "0", "1", ...
     #[serde(default = "default_notification_monitor")]
     pub notification_monitor: String,
@@ -326,6 +329,7 @@ impl Default for HookConfig {
             show_hostname: true,
             notification_position: "bottom_right".into(),
             notification_sound: true,
+            notification_sound_file: None,
             notification_monitor: "primary".into(),
             locale,
             auto_start: true,
@@ -349,6 +353,49 @@ fn settings_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".claude")
         .join("settings.json")
+}
+
+/// 커스텀 알림 소리 복사본 보관 폴더 (%LOCALAPPDATA%\agent-toast\sounds)
+pub fn sounds_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("agent-toast")
+        .join("sounds")
+}
+
+/// 선택한 사운드 파일을 sounds 폴더로 복사하고 복사본 경로를 반환.
+/// 기존 파일은 삭제하지 않는다. 정리는 저장 시점의 prune_sounds_dir 담당.
+fn copy_sound_into(src: &Path, dir: &Path) -> Result<String, String> {
+    let name = src
+        .file_name()
+        .ok_or_else(|| "잘못된 파일 경로".to_string())?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let dest = dir.join(name);
+    // sounds 폴더 안의 파일을 다시 선택한 경우 자기 자신 복사 방지
+    if dest != src {
+        std::fs::copy(src, &dest).map_err(|e| e.to_string())?;
+    }
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// sounds 폴더에서 keep 이외의 파일을 모두 삭제 (설정 저장 시 호출)
+fn prune_sounds_dir(dir: &Path, keep: Option<&Path>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if keep.is_some_and(|k| k == p.as_path()) {
+            continue;
+        }
+        let _ = std::fs::remove_file(&p);
+    }
+}
+
+/// 선택한 사운드 파일을 앱 데이터 폴더로 복사 (설정 저장 전 단계, 설정 파일은 건드리지 않음)
+#[tauri::command]
+pub fn copy_notification_sound_file(path: String) -> Result<String, String> {
+    copy_sound_into(Path::new(&path), &sounds_dir())
 }
 
 /// Returns the exe path without quotes (for TOML array, display, etc.)
@@ -418,6 +465,10 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         notification_sound: root["agent_toast"]["notification_sound"]
             .as_bool()
             .unwrap_or(true),
+        notification_sound_file: root["agent_toast"]["notification_sound_file"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
         notification_monitor: root["agent_toast"]["notification_monitor"]
             .as_str()
             .unwrap_or("primary")
@@ -734,6 +785,14 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert(
         "notification_sound".into(),
         Value::Bool(config.notification_sound),
+    );
+    cn.insert(
+        "notification_sound_file".into(),
+        config
+            .notification_sound_file
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
     );
     cn.insert(
         "notification_monitor".into(),
@@ -1093,6 +1152,12 @@ pub fn save_hook_config(
     let json = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
     std::fs::write(&path, &json).map_err(|e| e.to_string())?;
 
+    // 사운드 복사본 정리: 설정에 참조된 파일만 남긴다 (기본값 복원 후 저장 시 전체 삭제)
+    prune_sounds_dir(
+        &sounds_dir(),
+        config.notification_sound_file.as_deref().map(Path::new),
+    );
+
     // Codex config.toml 업데이트
     save_codex_config(config.codex_enabled).map_err(|e| e.to_string())?;
 
@@ -1204,6 +1269,17 @@ pub fn load_notification_sound() -> bool {
     root["agent_toast"]["notification_sound"]
         .as_bool()
         .unwrap_or(true)
+}
+
+/// 설정 파일에서 notification_sound_file 값만 빠르게 읽기. None = 시스템 기본음
+pub fn load_notification_sound_file() -> Option<String> {
+    let path = settings_path();
+    let content = std::fs::read_to_string(&path).ok()?;
+    let root: Value = serde_json::from_str(&content).ok()?;
+    root["agent_toast"]["notification_sound_file"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// 설정 파일에서 notification_position 값만 빠르게 읽기
@@ -1489,6 +1565,90 @@ fn extract_message(cmd: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── notification_sound_file tests ──
+
+    #[test]
+    fn parse_notification_sound_file_absent_is_none() {
+        let config = parse_hook_config_from_json(r#"{"agent_toast": {}}"#);
+        assert_eq!(config.notification_sound_file, None);
+    }
+
+    #[test]
+    fn parse_notification_sound_file_present() {
+        let json = r#"{"agent_toast": {"notification_sound_file": "C:\\data\\agent-toast\\sounds\\ding.mp3"}}"#;
+        let config = parse_hook_config_from_json(json);
+        assert_eq!(
+            config.notification_sound_file.as_deref(),
+            Some("C:\\data\\agent-toast\\sounds\\ding.mp3")
+        );
+    }
+
+    #[test]
+    fn parse_notification_sound_file_empty_is_none() {
+        let json = r#"{"agent_toast": {"notification_sound_file": ""}}"#;
+        assert_eq!(
+            parse_hook_config_from_json(json).notification_sound_file,
+            None
+        );
+    }
+
+    #[test]
+    fn write_notification_sound_file_some_and_none() {
+        let mut root = serde_json::json!({});
+        let mut config = HookConfig {
+            notification_sound_file: Some("C:\\s\\ding.mp3".into()),
+            ..HookConfig::default()
+        };
+        write_agent_toast_settings(&mut root, &config);
+        assert_eq!(
+            root["agent_toast"]["notification_sound_file"].as_str(),
+            Some("C:\\s\\ding.mp3")
+        );
+
+        config.notification_sound_file = None;
+        write_agent_toast_settings(&mut root, &config);
+        assert!(root["agent_toast"]["notification_sound_file"].is_null());
+    }
+
+    #[test]
+    fn copy_and_prune_sounds_dir() {
+        let base =
+            std::env::temp_dir().join(format!("agent-toast-test-sounds-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("sounds");
+
+        // 원본 파일 준비
+        std::fs::create_dir_all(&base).unwrap();
+        let src = base.join("ding.mp3");
+        std::fs::write(&src, b"fake-mp3").unwrap();
+
+        // 복사: 폴더가 없어도 생성되고, 원본 파일명이 유지된 복사본 경로 반환
+        let stored = copy_sound_into(&src, &dir).unwrap();
+        let stored_path = PathBuf::from(&stored);
+        assert!(stored_path.exists());
+        assert_eq!(stored_path.file_name().unwrap(), "ding.mp3");
+
+        // 두 번째 파일 복사: 첫 파일은 아직 남아 있어야 한다 (복사는 삭제하지 않음)
+        let src2 = base.join("dong.wav");
+        std::fs::write(&src2, b"fake-wav").unwrap();
+        let stored2 = copy_sound_into(&src2, &dir).unwrap();
+        assert!(stored_path.exists());
+
+        // prune: keep 파일만 남는다
+        prune_sounds_dir(&dir, Some(Path::new(&stored2)));
+        assert!(!stored_path.exists());
+        assert!(PathBuf::from(&stored2).exists());
+
+        // keep=None 이면 전부 삭제
+        prune_sounds_dir(&dir, None);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+        // 존재하지 않는 폴더는 no-op (panic 없음)
+        prune_sounds_dir(&base.join("nope"), None);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     // ── global_stats_enabled tests ──
 

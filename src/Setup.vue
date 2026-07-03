@@ -112,6 +112,7 @@ const config = ref<HookConfig>({
   auto_dismiss_seconds: 0,
   notification_position: "bottom_right",
   notification_sound: true,
+  notification_sound_file: null,
   notification_monitor: "primary",
   locale: navigator.language.startsWith("ko") ? "ko" : "en",
   auto_start: true,
@@ -180,6 +181,7 @@ onMounted(async () => {
     config.value.auto_dismiss_seconds = saved.auto_dismiss_seconds;
     config.value.notification_position = saved.notification_position;
     config.value.notification_sound = saved.notification_sound;
+    config.value.notification_sound_file = saved.notification_sound_file;
     config.value.notification_monitor = saved.notification_monitor;
     config.value.locale = saved.locale;
     config.value.codex_enabled = saved.codex_enabled;
@@ -261,6 +263,7 @@ function onReset() {
     auto_dismiss_seconds: 0,
     notification_position: "bottom_right",
     notification_sound: true,
+    notification_sound_file: null,
     notification_monitor: "primary",
     locale: currentLocale,
     auto_start: true,
