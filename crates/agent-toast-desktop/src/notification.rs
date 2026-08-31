@@ -199,12 +199,21 @@ pub fn show_notification(
             .filter(|t| t.len() > 1)
             .unwrap_or_else(|| win32::get_process_tree(request.pid));
 
-        let (all_candidates, found) =
-            win32::find_source_window(&tree, request.title_hint.as_deref());
+        // Folder name first, then the IDE project name (`.idea/.name`) when the
+        // two differ — JetBrains frames are titled with the latter.
+        let title_hints: Vec<&str> = [
+            request.title_hint.as_deref(),
+            request.alt_title_hint.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        let (all_candidates, found) = win32::find_source_window(&tree, &title_hints);
         log::debug!(
-            "[DEBUG] event={}, title_hint={:?}, process_tree={:?}, find_source_window={:?}",
+            "[DEBUG] event={}, title_hints={:?}, process_tree={:?}, find_source_window={:?}",
             request.event,
-            request.title_hint,
+            title_hints,
             tree,
             found
         );

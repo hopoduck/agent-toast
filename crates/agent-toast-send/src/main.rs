@@ -106,6 +106,9 @@ fn build_request(args: &SendArgs) -> agent_toast_core::NotifyRequest {
         event: args.event.clone().unwrap_or_default(),
         message: args.message.clone(),
         title_hint,
+        // Remote notifications never resolve a local window (hwnd stays 0), so
+        // there is nothing for an extra title hint to disambiguate.
+        alt_title_hint: None,
         process_tree: None,
         source: args.source.clone(),
         hostname: hostname_val,

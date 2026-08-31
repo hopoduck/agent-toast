@@ -17,6 +17,18 @@ pub struct NotifyRequest {
     pub event: String,
     pub message: Option<String>,
     pub title_hint: Option<String>,
+
+    /// Extra window-title hint used for matching only, never for display.
+    ///
+    /// JetBrains IDEs title each frame with the project name from
+    /// `.idea/.name`, which often differs from the folder name carried by
+    /// `title_hint` (folder `bmp_api` shows as `api – Foo.java [api]`). All
+    /// frames of one IDE also share a single process, so the title is the only
+    /// way to tell them apart. Sent alongside `title_hint` so matching can try
+    /// both; `title_hint` stays the folder name the toast displays.
+    #[serde(default)]
+    pub alt_title_hint: Option<String>,
+
     /// Pre-resolved process tree from CLI side (avoids race with dead process)
     #[serde(default)]
     pub process_tree: Option<Vec<u32>>,
@@ -56,6 +68,7 @@ mod tests {
             event: event.to_string(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: None,
@@ -83,6 +96,7 @@ mod tests {
             event: "task_complete".to_string(),
             message: Some("빌드 완료".to_string()),
             title_hint: Some("my-project".to_string()),
+            alt_title_hint: None,
             process_tree: Some(vec![100, 200, 300]),
             source: "claude".into(),
             hostname: None,
@@ -104,7 +118,28 @@ mod tests {
         assert_eq!(req.event, "error");
         assert!(req.message.is_none());
         assert!(req.title_hint.is_none());
+        assert!(req.alt_title_hint.is_none());
         assert!(req.process_tree.is_none());
+    }
+
+    #[test]
+    fn alt_title_hint_defaults_to_none_for_older_senders() {
+        // An `agent-toast-send` built before this field must still decode.
+        let json = r#"{"pid":1,"event":"error","title_hint":"bmp_api"}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.title_hint.as_deref(), Some("bmp_api"));
+        assert!(req.alt_title_hint.is_none());
+    }
+
+    #[test]
+    fn alt_title_hint_roundtrip() {
+        let mut req = make_request("task_complete");
+        req.title_hint = Some("bmp_api".into());
+        req.alt_title_hint = Some("api".into());
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.title_hint.as_deref(), Some("bmp_api"));
+        assert_eq!(decoded.alt_title_hint.as_deref(), Some("api"));
     }
 
     #[test]
@@ -144,6 +179,7 @@ mod tests {
             event: "test".to_string(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: Some(tree.clone()),
             source: "claude".into(),
             hostname: None,
@@ -160,6 +196,7 @@ mod tests {
             event: "task_complete".to_string(),
             message: Some("한글 메시지 🎉 日本語 العربية".to_string()),
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: None,
@@ -179,6 +216,7 @@ mod tests {
             event: "test".to_string(),
             message: None,
             title_hint: Some("프로젝트-이름".to_string()),
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: None,
@@ -195,6 +233,7 @@ mod tests {
             event: "test".to_string(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: None,
@@ -211,6 +250,7 @@ mod tests {
             event: "internal".to_string(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "updater".into(),
             hostname: None,
@@ -225,6 +265,7 @@ mod tests {
             event: "".to_string(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: None,
@@ -258,6 +299,7 @@ mod tests {
             event: "test".to_string(),
             message: Some("message".to_string()),
             title_hint: Some("hint".to_string()),
+            alt_title_hint: Some("alt-hint".to_string()),
             process_tree: Some(vec![1, 2, 3]),
             source: "claude".into(),
             hostname: None,
@@ -267,6 +309,7 @@ mod tests {
         assert_eq!(cloned.event, req.event);
         assert_eq!(cloned.message, req.message);
         assert_eq!(cloned.title_hint, req.title_hint);
+        assert_eq!(cloned.alt_title_hint, req.alt_title_hint);
         assert_eq!(cloned.process_tree, req.process_tree);
         assert_eq!(cloned.source, req.source);
     }
@@ -285,6 +328,7 @@ mod tests {
             event: "task_complete".into(),
             message: Some("done".into()),
             title_hint: Some("proj".into()),
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: Some("prod-vps-01".into()),
@@ -302,6 +346,7 @@ mod tests {
             event: "task_complete".into(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: Some("회사-서버-01".into()),
@@ -318,6 +363,7 @@ mod tests {
             event: "task_complete".into(),
             message: None,
             title_hint: None,
+            alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
             hostname: Some(String::new()),

@@ -8,6 +8,15 @@ use agent_toast_lib::cli::{Cli, NotifyRequest};
 use agent_toast_lib::pipe;
 use agent_toast_lib::win32;
 
+/// Folder name of a project path (`C:\foo\bar` -> `bar`), falling back to the
+/// path itself when it has no final component.
+fn folder_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
+}
+
 fn get_parent_pid() -> u32 {
     #[cfg(windows)]
     {
@@ -102,12 +111,9 @@ fn main() {
             )
         });
 
-        let title_hint = codex_payload["cwd"].as_str().map(|cwd| {
-            std::path::Path::new(cwd)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| cwd.to_string())
-        });
+        let cwd = codex_payload["cwd"].as_str();
+        let title_hint = cwd.map(folder_name);
+        let alt_title_hint = cwd.and_then(agent_toast_core::ide::read_ide_project_name);
 
         let pid = get_parent_pid();
         let process_tree = win32::get_process_tree(pid);
@@ -117,6 +123,7 @@ fn main() {
             event,
             message,
             title_hint,
+            alt_title_hint,
             process_tree: Some(process_tree),
             source: "codex".into(),
             hostname: None,
@@ -247,21 +254,23 @@ fn main() {
 
     // Title hint: use --title arg, or fall back to CLAUDE_PROJECT_DIR env var.
     // Extract folder name from path (e.g. "C:\foo\bar" -> "bar") for window title matching.
-    let title_hint = args
+    let project_dir = args
         .title
-        .or_else(|| std::env::var("CLAUDE_PROJECT_DIR").ok())
-        .map(|t| {
-            std::path::Path::new(&t)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or(t)
-        });
+        .or_else(|| std::env::var("CLAUDE_PROJECT_DIR").ok());
+    let title_hint = project_dir.as_deref().map(folder_name);
+    // JetBrains IDEs title their frames with the project name rather than the
+    // folder, and all frames share one PID — without this hint there is nothing
+    // left to tell `bmp_api` and `bmp_adm` apart. Absent for non-IDE dirs.
+    let alt_title_hint = project_dir
+        .as_deref()
+        .and_then(agent_toast_core::ide::read_ide_project_name);
 
     let request = NotifyRequest {
         pid,
         event,
         message,
         title_hint,
+        alt_title_hint,
         process_tree: Some(process_tree),
         source: "claude".into(),
         hostname: None,

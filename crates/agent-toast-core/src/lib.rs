@@ -3,6 +3,7 @@
 
 pub mod dynamic;
 pub mod hook_config;
+pub mod ide;
 pub mod wire;
 
 pub use wire::NotifyRequest;

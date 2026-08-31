@@ -242,6 +242,7 @@ fn test_notification(app: AppHandle, title: Option<String>, message: Option<Stri
         event: event.to_string(),
         message: Some(message.unwrap_or_else(|| test_msg.to_string())),
         title_hint: Some(title.unwrap_or_else(|| test_title.to_string())),
+        alt_title_hint: None,
         process_tree: Some(vec![]),
         source: "claude".into(),
         hostname: None,

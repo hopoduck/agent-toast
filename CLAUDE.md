@@ -66,8 +66,9 @@ Cargo.toml                          # workspace root
 crates/
   agent-toast-core/                 # shared types + hook-config JSON merge
     src/lib.rs
-    src/wire.rs                     # NotifyRequest (+ hostname), WIRE_VERSION
+    src/wire.rs                     # NotifyRequest (+ hostname, alt_title_hint), WIRE_VERSION
     src/hook_config.rs              # merge_agent_toast_hooks, HookEntry, is_agent_toast_cmd
+    src/ide.rs                      # read_ide_project_name: JetBrains `.idea/.name` lookup
     src/dynamic.rs                  # --dynamic: derive toast body from hook stdin JSON (tool_input.description → last_assistant_message → static --message)
   agent-toast-desktop/              # Windows-only Tauri app (was src-tauri/)
     src/main.rs, lib.rs, cli.rs, pipe.rs, http_server.rs,
@@ -100,6 +101,7 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 ### Critical Win32 Logic
 
 - **Process tree**: walks parent chain from `--pid` up to 20 levels to find the terminal window. Tree is resolved eagerly in `main.rs` before pipe send (avoids race if CLI process exits).
+- **Window title matching**: `select_source_window` scores every candidate against each hint in `title_hints` (folder name, then the JetBrains project name) and keeps the best; only when nothing matches does it fall back to process-tree distance and z-order. `score_title_match` normalizes en/em dash separators first, since JetBrains titles read `api – Foo.java [api]` while VS Code uses `Foo.ts - folder - Visual Studio Code`. Every frame of one JetBrains IDE shares a single PID, so the title is the only thing that can tell those windows apart.
 - **FR-2**: skip notification if source already focused (`is_hwnd_focused`)
 - **FR-3**: auto-close on focus return via `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` + mpsc channel
 - **Window activation**: uses `SendInput` Alt-key simulation to bypass `SetForegroundWindow` restriction; restores minimized windows via `IsIconic` check
@@ -144,7 +146,7 @@ agent-toast.exe --pid 1234 --event task_complete --dynamic   # Derive body from 
 
 Events: `task_complete`, `user_input_required`, `error`
 
-`CLAUDE_PROJECT_DIR` env var is used as `title_hint` for window matching when `--title` is not provided.
+`CLAUDE_PROJECT_DIR` env var is used as `title_hint` for window matching when `--title` is not provided. Its `.idea/.name` (the JetBrains project name, present when it differs from the folder name) is sent as `alt_title_hint`, a matching-only hint — the toast still displays `title_hint`.
 
 ## Configuration Files
 

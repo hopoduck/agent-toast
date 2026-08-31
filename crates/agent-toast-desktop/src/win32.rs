@@ -132,7 +132,7 @@ pub fn score_title_match(title: &str, hint: &str) -> u32 {
     if hint_lower.is_empty() {
         return 0;
     }
-    let title_lower = title.to_lowercase();
+    let title_lower = normalize_separators(&title.to_lowercase());
     let segments: Vec<&str> = title_lower.split(" - ").collect();
     let content_segments: &[&str] = if segments.len() > 1 {
         &segments[..segments.len() - 1]
@@ -156,6 +156,15 @@ pub fn score_title_match(title: &str, hint: &str) -> u32 {
         return 1;
     }
     0
+}
+
+/// Rewrite title separators to the plain `" - "` that segment splitting expects.
+///
+/// VS Code and most Win32 apps use a hyphen, but JetBrains IDEs use an en dash
+/// (`api – Foo.java [api]`). Without this the whole IntelliJ title stays one
+/// segment, so the project name never gets an exact-segment match.
+fn normalize_separators(title: &str) -> String {
+    title.replace(" – ", " - ").replace(" — ", " - ")
 }
 
 /// True if `needle` appears in `haystack` flanked by non-alphanumeric (or string edge)
@@ -182,15 +191,61 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
     false
 }
 
+/// Pick the source window from `titled` (candidate paired with its window
+/// title, in z-order) using every hint in `title_hints`, falling back to
+/// process-tree distance when no title matches.
+///
+/// Split out of `find_source_window` so the selection rules can be tested
+/// without Win32.
+pub fn select_source_window(
+    titled: &[(WindowCandidate, String)],
+    title_hints: &[&str],
+    process_tree: &[u32],
+) -> Option<WindowCandidate> {
+    // A window scores as its best hint; highest score wins, ties keep the
+    // first (top of z-order). Empty hints score 0, so they drop out on their own.
+    let mut best: Option<(u32, WindowCandidate)> = None;
+    for (candidate, title) in titled {
+        let score = title_hints
+            .iter()
+            .map(|hint| score_title_match(title, hint))
+            .max()
+            .unwrap_or(0);
+        if score == 0 {
+            continue;
+        }
+        if best.map(|(s, _)| score > s).unwrap_or(true) {
+            best = Some((score, *candidate));
+        }
+    }
+
+    best.map(|(_, c)| c).or_else(|| {
+        // Nothing matched: fall back to the PID closest to the start of the
+        // process tree (child-first). Note that windows sharing one PID — every
+        // frame of a JetBrains IDE does — tie here and collapse to z-order,
+        // which is why the title hints above have to carry the real work.
+        titled
+            .iter()
+            .map(|(c, _)| c)
+            .min_by_key(|(_, pid)| {
+                process_tree
+                    .iter()
+                    .position(|p| p == pid)
+                    .unwrap_or(usize::MAX)
+            })
+            .copied()
+    })
+}
+
 /// Find the best visible window owned by any PID in the process tree.
-/// If title_hint is provided, prefer windows whose title best matches it
-/// (see `score_title_match`). Otherwise, or on tie, prefer PIDs closer to
-/// the start PID (child-first), then z-order.
+/// Windows whose title matches any of `title_hints` win (see
+/// `score_title_match`); otherwise PIDs closer to the start PID (child-first)
+/// win, then z-order.
 /// Returns (all_candidates, best_match).
 #[cfg(windows)]
 pub fn find_source_window(
     process_tree: &[u32],
-    title_hint: Option<&str>,
+    title_hints: &[&str],
 ) -> (Vec<WindowCandidate>, Option<WindowCandidate>) {
     let candidates: Arc<Mutex<Vec<(isize, u32)>>> = Arc::new(Mutex::new(Vec::new()));
     let tree: Vec<u32> = process_tree.to_vec();
@@ -205,34 +260,11 @@ pub fn find_source_window(
 
     let candidates = candidates.lock().unwrap();
 
-    // Pick highest-scoring title match; on ties keep the first (top of z-order).
-    let best = title_hint
-        .filter(|h| !h.is_empty())
-        .and_then(|hint| {
-            let mut best: Option<(u32, WindowCandidate)> = None;
-            for c in candidates.iter() {
-                let score = score_title_match(&get_window_title(c.0), hint);
-                if score == 0 {
-                    continue;
-                }
-                if best.map(|(s, _)| score > s).unwrap_or(true) {
-                    best = Some((score, *c));
-                }
-            }
-            best.map(|(_, c)| c)
-        })
-        // Fallback: pick by closest PID in tree (child-first)
-        .or_else(|| {
-            candidates
-                .iter()
-                .min_by_key(|(_, pid)| {
-                    process_tree
-                        .iter()
-                        .position(|p| p == pid)
-                        .unwrap_or(usize::MAX)
-                })
-                .copied()
-        });
+    let titled: Vec<(WindowCandidate, String)> = candidates
+        .iter()
+        .map(|c| (*c, get_window_title(c.0)))
+        .collect();
+    let best = select_source_window(&titled, title_hints, process_tree);
     (candidates.clone(), best)
 }
 
@@ -781,7 +813,7 @@ pub fn get_process_tree(_start_pid: u32) -> Vec<u32> {
 #[cfg(not(windows))]
 pub fn find_source_window(
     _process_tree: &[u32],
-    _title_hint: Option<&str>,
+    _title_hints: &[&str],
 ) -> (Vec<WindowCandidate>, Option<WindowCandidate>) {
     (vec![], None)
 }
@@ -854,6 +886,143 @@ mod tests {
     fn score_unicode_folder() {
         let title = "파일.txt - 프로젝트 - Visual Studio Code";
         assert_eq!(score_title_match(title, "프로젝트"), 100);
+    }
+
+    #[test]
+    fn score_intellij_en_dash_title_splits_into_segments() {
+        // IntelliJ separates with an en dash, so "api" is a whole segment and must
+        // score an exact-segment match, not a bare substring.
+        let title = "api – HomeShoppingNowDao.java [api]";
+        assert_eq!(score_title_match(title, "api"), 100);
+    }
+
+    #[test]
+    fn score_em_dash_title_splits_into_segments() {
+        assert_eq!(score_title_match("adm — TODO.md [svc]", "adm"), 100);
+    }
+
+    /// The three IntelliJ frames from the bug report, all owned by one PID.
+    fn intellij_frames() -> Vec<(WindowCandidate, String)> {
+        vec![
+            (
+                (2035292, 30716),
+                "api – HomeShoppingNowDao.java [api]".into(),
+            ),
+            ((263206, 30716), "adm – TODO.md [svc]".into()),
+            (
+                (6883904, 30716),
+                "kt-bom-cms-cug – hsnSchdList.html [kt-bom-cms-cug.main]".into(),
+            ),
+        ]
+    }
+
+    #[test]
+    fn select_uses_ide_project_name_when_folder_name_misses() {
+        // Folder is `bmp_api` but IntelliJ titles the frame `api` (.idea/.name),
+        // so the folder hint alone scores 0 on every frame and z-order decides.
+        // The project name passed as a second hint has to pin the right frame.
+        let frames = intellij_frames();
+        let tree = [45148, 50148, 48624, 34352, 13004, 38552, 30716, 32348];
+
+        let folder_only = select_source_window(&frames, &["bmp_api"], &tree);
+        assert_eq!(
+            folder_only,
+            Some((2035292, 30716)),
+            "folder-only hint falls back to z-order, which happens to be `api` here"
+        );
+
+        // Reorder so z-order no longer favours the right frame: the folder-only
+        // hint now picks the wrong window, the project-name hint still picks `api`.
+        let mut reordered = frames.clone();
+        reordered.rotate_left(1);
+        assert_eq!(
+            select_source_window(&reordered, &["bmp_api"], &tree),
+            Some((263206, 30716)),
+            "regression guard: without the project name this lands on `adm`"
+        );
+        assert_eq!(
+            select_source_window(&reordered, &["bmp_api", "api"], &tree),
+            Some((2035292, 30716)),
+        );
+    }
+
+    #[test]
+    fn select_picks_adm_frame_for_its_own_project_name() {
+        let frames = intellij_frames();
+        let tree = [1, 30716];
+        assert_eq!(
+            select_source_window(&frames, &["bmp_adm", "adm"], &tree),
+            Some((263206, 30716)),
+        );
+    }
+
+    #[test]
+    fn select_folder_hint_still_wins_when_no_ide_name_exists() {
+        // bmp_open_api has no .idea/.name, so the folder name is the only hint
+        // and the title carries it verbatim.
+        let frames = vec![
+            ((1, 30716), "api – Foo.java [api]".to_string()),
+            (
+                (2, 30716),
+                "bmp_open_api – OpenApiController.java [bmp_open_api]".to_string(),
+            ),
+        ];
+        assert_eq!(
+            select_source_window(&frames, &["bmp_open_api"], &[30716]),
+            Some((2, 30716)),
+        );
+    }
+
+    #[test]
+    fn select_falls_back_to_process_tree_when_no_title_matches() {
+        let frames = vec![
+            ((10, 200), "Unrelated Window".to_string()),
+            ((11, 100), "Also Unrelated".to_string()),
+        ];
+        // pid 100 sits closer to the start of the tree than pid 200.
+        assert_eq!(
+            select_source_window(&frames, &["nothing-matches"], &[100, 200]),
+            Some((11, 100)),
+        );
+    }
+
+    #[test]
+    fn select_empty_hints_falls_back_without_panicking() {
+        let frames = vec![((7, 42), "Foo - bar - Visual Studio Code".to_string())];
+        assert_eq!(select_source_window(&frames, &[], &[42]), Some((7, 42)));
+        assert_eq!(select_source_window(&frames, &[""], &[42]), Some((7, 42)));
+    }
+
+    #[test]
+    fn select_none_when_no_candidates() {
+        assert_eq!(select_source_window(&[], &["api"], &[1, 2]), None);
+    }
+
+    #[test]
+    fn select_vs_code_windows_unaffected() {
+        // The VS Code path from the same log must keep working unchanged.
+        let windows = vec![
+            (
+                (199022, 26228),
+                "✳ 프로젝트 코드리뷰 - comiq-mate - Visual Studio Code".to_string(),
+            ),
+            (
+                (264454, 26228),
+                "TODO.md - vchatcloud-desk-frontend - Visual Studio Code".to_string(),
+            ),
+            (
+                (5639112, 26228),
+                "◐ 앱 아이콘 디자인 - new-volume-app - Visual Studio Code".to_string(),
+            ),
+        ];
+        assert_eq!(
+            select_source_window(&windows, &["comiq-mate"], &[26228]),
+            Some((199022, 26228)),
+        );
+        assert_eq!(
+            select_source_window(&windows, &["new-volume-app"], &[26228]),
+            Some((5639112, 26228)),
+        );
     }
 
     #[test]
