@@ -205,6 +205,8 @@ fn show_update_notification(app: &AppHandle, state: &NotificationManagerState, v
         process_tree: Some(vec![]),
         source: "updater".into(),
         hostname: None,
+        orca_terminal_handle: None,
+        orca_tab_id: None,
     };
 
     show_notification(app, state, req);
@@ -267,6 +269,8 @@ fn show_update_completed_notification(
         process_tree: Some(vec![]),
         source: "updater".into(),
         hostname: None,
+        orca_terminal_handle: None,
+        orca_tab_id: None,
     };
 
     show_notification(app, state, req);

@@ -112,6 +112,11 @@ fn build_request(args: &SendArgs) -> agent_toast_core::NotifyRequest {
         process_tree: None,
         source: args.source.clone(),
         hostname: hostname_val,
+        // Orca tab targeting is resolved against the desktop host's own Orca
+        // runtime and its state on that machine, neither of which a remote
+        // sender can reach.
+        orca_terminal_handle: None,
+        orca_tab_id: None,
     }
 }
 

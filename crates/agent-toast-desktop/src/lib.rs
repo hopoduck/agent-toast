@@ -4,6 +4,7 @@ mod fonts;
 mod global_sync;
 pub mod http_server;
 mod notification;
+pub mod orca;
 pub mod pipe;
 pub mod setup;
 pub mod sound;
@@ -206,6 +207,8 @@ fn resize_notify(id: String, height: f64, app: AppHandle) {
 fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
     let state = app.state::<NotificationManagerState>();
+    // Read before closing — the notification is gone from the manager after.
+    let orca_handle = get_notification_for_window(&state, &id).and_then(|n| n.orca_terminal_handle);
     // 활성화보다 먼저 Activated로 닫아 알림을 매니저에서 제거한다. activate_window가
     // 소스 창을 포그라운드로 올리면 EVENT_SYSTEM_FOREGROUND가 발생하고, 포그라운드
     // 리스너 스레드가 이 토스트를 Focus 사유로 먼저 닫아버리는 경쟁이 생기는데
@@ -216,6 +219,15 @@ fn activate_source(hwnd: isize, id: String, app: AppHandle) {
         win32::activate_window(hwnd);
     } else {
         log::debug!("[ACTIVATE] hwnd=0, skipping window activation (likely remote)");
+    }
+    // Raising Orca's window only lands on whatever tab was last open, so ask
+    // the runtime to switch to the session that actually notified. Off-thread:
+    // the RPC must never hold up the click.
+    if let Some(handle) = orca_handle {
+        std::thread::spawn(move || {
+            let switched = orca::focus_terminal(&handle);
+            log::debug!("[ACTIVATE] orca tab {} switched={}", handle, switched);
+        });
     }
 }
 
@@ -246,6 +258,8 @@ fn test_notification(app: AppHandle, title: Option<String>, message: Option<Stri
         process_tree: Some(vec![]),
         source: "claude".into(),
         hostname: None,
+        orca_terminal_handle: None,
+        orca_tab_id: None,
     };
     log::debug!("[TEST] Spawning notification thread for event={}", event);
     std::thread::spawn(move || {
@@ -536,6 +550,10 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             win32::start_foreground_listener(move |hwnd| {
                 on_foreground_changed(&focus_handle, &focus_state, hwnd);
             });
+
+            // Orca tabs switch without any OS focus change, so returning to a
+            // session there is only visible by polling its runtime.
+            notification::start_orca_tab_watcher(handle.clone(), state.clone());
 
             // Open setup window if requested
             if open_setup {

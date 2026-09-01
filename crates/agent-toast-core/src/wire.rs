@@ -45,6 +45,31 @@ pub struct NotifyRequest {
     ///   and render a host badge.
     #[serde(default)]
     pub hostname: Option<String>,
+
+    /// Orca terminal handle (`ORCA_TERMINAL_HANDLE`) when the hook ran inside a
+    /// terminal managed by the Orca app.
+    ///
+    /// Orca runs every session in a single window owned by a process that is
+    /// not in the session's parent chain (the shell's parent is a detached
+    /// `orca-terminal-daemon.exe`), and every tab shares that one window with
+    /// the constant title `Orca`. Neither the process tree nor the window title
+    /// can tell two Orca sessions apart, so this handle is the only thing that
+    /// identifies the exact session. The desktop app hands it back to the Orca
+    /// runtime to switch to that session when the toast is clicked.
+    #[serde(default)]
+    pub orca_terminal_handle: Option<String>,
+
+    /// Orca tab id (`ORCA_TAB_ID`) when the hook ran inside a terminal managed
+    /// by the Orca app.
+    ///
+    /// Sits one level above [`Self::orca_terminal_handle`]: the handle names a
+    /// terminal, this names the tab holding it. Deciding whether the user is
+    /// already looking at a session means comparing against the tab Orca
+    /// records as active, and that record is a tab id, so the id has to travel
+    /// with the request. A split tab shows both of its terminals at once, which
+    /// makes the tab the right granularity for that question anyway.
+    #[serde(default)]
+    pub orca_tab_id: Option<String>,
 }
 
 fn default_source() -> String {
@@ -72,6 +97,8 @@ mod tests {
             process_tree: None,
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         }
     }
 
@@ -100,6 +127,8 @@ mod tests {
             process_tree: Some(vec![100, 200, 300]),
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -183,6 +212,8 @@ mod tests {
             process_tree: Some(tree.clone()),
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -200,6 +231,8 @@ mod tests {
             process_tree: None,
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -220,6 +253,8 @@ mod tests {
             process_tree: None,
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -237,6 +272,8 @@ mod tests {
             process_tree: None,
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -254,6 +291,8 @@ mod tests {
             process_tree: None,
             source: "updater".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         assert_eq!(req.pid, 0);
     }
@@ -269,6 +308,8 @@ mod tests {
             process_tree: None,
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         assert_eq!(req.event, "");
         assert_eq!(req.event_display(), "");
@@ -303,6 +344,8 @@ mod tests {
             process_tree: Some(vec![1, 2, 3]),
             source: "claude".into(),
             hostname: None,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let cloned = req.clone();
         assert_eq!(cloned.pid, req.pid);
@@ -331,6 +374,8 @@ mod tests {
             alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            orca_terminal_handle: None,
+            orca_tab_id: None,
             hostname: Some("prod-vps-01".into()),
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -349,6 +394,8 @@ mod tests {
             alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            orca_terminal_handle: None,
+            orca_tab_id: None,
             hostname: Some("회사-서버-01".into()),
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -366,10 +413,50 @@ mod tests {
             alt_title_hint: None,
             process_tree: None,
             source: "claude".into(),
+            orca_terminal_handle: None,
+            orca_tab_id: None,
             hostname: Some(String::new()),
         };
         let json = serde_json::to_string(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.hostname.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn orca_terminal_handle_defaults_to_none_for_older_senders() {
+        let json = r#"{"pid":1,"event":"task_complete"}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert!(req.orca_terminal_handle.is_none());
+    }
+
+    #[test]
+    fn orca_terminal_handle_roundtrip() {
+        let mut req = make_request("task_complete");
+        req.orca_terminal_handle = Some("term_58587268-a61f-4403-b66f-f38f080ba252".into());
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            decoded.orca_terminal_handle.as_deref(),
+            Some("term_58587268-a61f-4403-b66f-f38f080ba252")
+        );
+    }
+
+    #[test]
+    fn orca_tab_id_defaults_to_none_for_older_senders() {
+        let json = r#"{"pid":1,"event":"task_complete"}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert!(req.orca_tab_id.is_none());
+    }
+
+    #[test]
+    fn orca_tab_id_roundtrip() {
+        let mut req = make_request("task_complete");
+        req.orca_tab_id = Some("62fb1a1d-81be-4eab-ba3b-72930068b1c7".into());
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            decoded.orca_tab_id.as_deref(),
+            Some("62fb1a1d-81be-4eab-ba3b-72930068b1c7")
+        );
     }
 }

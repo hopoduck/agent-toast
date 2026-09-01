@@ -17,6 +17,24 @@ fn folder_name(path: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
+/// The Orca terminal this hook ran in, from the `ORCA_TERMINAL_HANDLE` env var
+/// Orca exports into every managed terminal (inherited down through the shell
+/// and the agent process). `None` outside Orca.
+fn orca_terminal_handle() -> Option<String> {
+    std::env::var("ORCA_TERMINAL_HANDLE")
+        .ok()
+        .filter(|h| !h.is_empty())
+}
+
+/// The Orca tab holding that terminal, from the `ORCA_TAB_ID` env var, exported
+/// and inherited the same way. This is the id Orca records as active when the
+/// tab is on screen, so it is what a skip decision compares against.
+fn orca_tab_id() -> Option<String> {
+    std::env::var("ORCA_TAB_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
+}
+
 fn get_parent_pid() -> u32 {
     #[cfg(windows)]
     {
@@ -127,6 +145,8 @@ fn main() {
             process_tree: Some(process_tree),
             source: "codex".into(),
             hostname: None,
+            orca_terminal_handle: orca_terminal_handle(),
+            orca_tab_id: orca_tab_id(),
         };
 
         match pipe::try_send(&request) {
@@ -274,6 +294,8 @@ fn main() {
         process_tree: Some(process_tree),
         source: "claude".into(),
         hostname: None,
+        orca_terminal_handle: orca_terminal_handle(),
+        orca_tab_id: orca_tab_id(),
     };
 
     // Try to send to existing instance

@@ -77,6 +77,17 @@ pub struct NotificationData {
     /// Settings toggle — even if hostname is Some, UI may hide it.
     #[serde(default = "default_show_hostname")]
     pub show_hostname: bool,
+    /// Orca terminal handle this notification came from, when the session runs
+    /// in Orca. `source_hwnd` then points at the shared Orca window, so this
+    /// handle is what tells one session's toast from another's, and what a
+    /// click hands back to Orca to switch to that session.
+    #[serde(default)]
+    pub orca_terminal_handle: Option<String>,
+
+    /// Orca tab holding that terminal. Compared against the tab Orca records as
+    /// active to tell whether the user is looking at this session.
+    #[serde(default)]
+    pub orca_tab_id: Option<String>,
 }
 
 fn default_show_hostname() -> bool {
@@ -140,6 +151,24 @@ pub fn get_notification_for_window(
         .cloned()
 }
 
+/// Toast title for a resolved source window, honoring the `title_display_mode`
+/// setting: the project folder when set to `project`, otherwise the window's
+/// own title, with the PID as the last resort when no window was found.
+fn resolve_display_title(request: &NotifyRequest, hwnd: isize) -> String {
+    let window_title = || {
+        if hwnd != 0 {
+            win32::get_window_title(hwnd)
+        } else {
+            format!("PID {}", request.pid)
+        }
+    };
+    if crate::setup::get_hook_config().title_display_mode == "project" {
+        request.title_hint.clone().unwrap_or_else(window_title)
+    } else {
+        window_title()
+    }
+}
+
 pub fn show_notification(
     app: &AppHandle,
     state: &NotificationManagerState,
@@ -192,6 +221,41 @@ pub fn show_notification(
                 .clone()
                 .unwrap_or_else(|| "Agent Toast".to_string()),
         )
+    } else if let Some(handle) = request.orca_terminal_handle.clone() {
+        // Orca sessions never appear in the notifying process's parent chain,
+        // so the tree walk is skipped entirely: the runtime hands us the app
+        // PID that owns the window, and the tab handle carries the identity
+        // the shared window and its constant "Orca" title cannot.
+        let hwnd = crate::orca::app_window().unwrap_or(0);
+        log::debug!(
+            "[DEBUG] orca session: handle={}, app_hwnd={}, event={}",
+            handle,
+            hwnd,
+            request.event
+        );
+
+        // FR-2, per tab: the window being focused is not enough — the user has
+        // to be looking at this very tab, otherwise a session in another tab
+        // would be silenced while its notification is exactly what is wanted.
+        // A request without a tab id (an older sender) can never prove that, so
+        // it keeps the notification rather than guessing.
+        if hwnd != 0 && win32::is_hwnd_focused(hwnd) {
+            let active = crate::orca::active_tab_id();
+            log::debug!(
+                "[DEBUG] orca active tab={:?}, this tab={:?}",
+                active,
+                request.orca_tab_id
+            );
+            if let (Some(active), Some(tab)) = (active, request.orca_tab_id.as_deref()) {
+                if active == tab {
+                    crate::stats::record_skipped_focused(&stats_state, &ev, &src, remote);
+                    return;
+                }
+            }
+        }
+
+        let tree = request.process_tree.clone().unwrap_or_default();
+        (hwnd, tree, resolve_display_title(&request, hwnd))
     } else {
         let tree = request
             .process_tree
@@ -244,24 +308,7 @@ pub fn show_notification(
             return;
         }
 
-        let title = {
-            let title_mode = crate::setup::get_hook_config().title_display_mode;
-            if title_mode == "project" {
-                request.title_hint.clone().unwrap_or_else(|| {
-                    if hwnd != 0 {
-                        win32::get_window_title(hwnd)
-                    } else {
-                        format!("PID {}", request.pid)
-                    }
-                })
-            } else if hwnd != 0 {
-                win32::get_window_title(hwnd)
-            } else {
-                format!("PID {}", request.pid)
-            }
-        };
-
-        (hwnd, tree, title)
+        (hwnd, tree, resolve_display_title(&request, hwnd))
     };
 
     let mut mgr = state.lock().unwrap();
@@ -285,6 +332,8 @@ pub fn show_notification(
         source: request.source.clone(),
         hostname: request.hostname.clone(),
         show_hostname: crate::setup::read_show_hostname(),
+        orca_terminal_handle: request.orca_terminal_handle.clone(),
+        orca_tab_id: request.orca_tab_id.clone(),
     };
 
     // Calculate position: stack from bottom-right
@@ -570,11 +619,46 @@ fn position_in_work_area(
     }
 }
 
-/// FR-3: Auto-close notifications whose source window matches the newly focused window.
+/// Whether a foreground switch to `focused_hwnd` (top-level `focused_root`)
+/// means the user went back to this notification's source.
+///
 /// Matching strategies (in order):
 /// 1. Exact HWND match
 /// 2. Root ancestor match — resolves XAML child windows (e.g., Windows Terminal internals)
 ///    to their top-level parent, without false-matching other windows of the same process
+fn closes_on_foreground(n: &NotificationData, focused_hwnd: isize, focused_root: isize) -> bool {
+    // A foreground event can carry a null window when the desktop itself takes
+    // focus. Remote toasts never resolve a window either, and closing every one
+    // of them on that coincidence is not a focus return.
+    if focused_hwnd == 0 {
+        return false;
+    }
+    // Orca stacks every session into one window, so an HWND match here would
+    // close all of its toasts the moment that window is focused, no matter
+    // which tab the user actually went to. Those are left to
+    // `start_orca_tab_watcher`, which closes only the tab on screen.
+    if n.orca_terminal_handle.is_some() {
+        return false;
+    }
+    // Strategy 1: exact HWND match
+    if n.source_hwnd == focused_hwnd {
+        return true;
+    }
+    // Strategy 2: root ancestor match
+    // Handles XAML child windows in Windows Terminal — the focused child
+    // resolves to the same root as the source window. Different top-level
+    // windows (e.g., separate VS Code windows) have distinct roots.
+    if n.source_hwnd != 0 {
+        let source_root = win32::get_root_hwnd(n.source_hwnd);
+        if source_root != 0 && source_root == focused_root {
+            return true;
+        }
+    }
+    false
+}
+
+/// FR-3: Auto-close notifications whose source window matches the newly
+/// focused window.
 pub fn on_foreground_changed(
     app: &AppHandle,
     state: &NotificationManagerState,
@@ -594,23 +678,7 @@ pub fn on_foreground_changed(
     let to_close: Vec<String> = mgr
         .notifications
         .iter()
-        .filter(|n| {
-            // Strategy 1: exact HWND match
-            if n.source_hwnd == focused_hwnd {
-                return true;
-            }
-            // Strategy 2: root ancestor match
-            // Handles XAML child windows in Windows Terminal — the focused child
-            // resolves to the same root as the source window. Different top-level
-            // windows (e.g., separate VS Code windows) have distinct roots.
-            if n.source_hwnd != 0 {
-                let source_root = win32::get_root_hwnd(n.source_hwnd);
-                if source_root != 0 && source_root == focused_root {
-                    return true;
-                }
-            }
-            false
-        })
+        .filter(|n| closes_on_foreground(n, focused_hwnd, focused_root))
         .map(|n| n.id.clone())
         .collect();
 
@@ -629,6 +697,64 @@ pub fn on_foreground_changed(
     }
 }
 
+/// How often the Orca watcher asks the runtime which tab is on screen.
+///
+/// Switching tabs inside Orca changes nothing at the OS level — the window
+/// stays foreground and no `EVENT_SYSTEM_FOREGROUND` fires — so returning to a
+/// session is invisible to the focus hook and can only be noticed by asking.
+/// A runtime round trip costs ~3ms, and the poll only runs while Orca toasts
+/// are actually on screen.
+const ORCA_TAB_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Close Orca toasts once the user is looking at the tab that raised them.
+pub fn start_orca_tab_watcher(app: AppHandle, state: NotificationManagerState) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(ORCA_TAB_POLL_INTERVAL);
+
+        // (id, tab id, window) for every Orca toast currently on screen.
+        // Checked before anything else: this is an in-memory read, while the
+        // settings lookup below parses a file, and the common case is an idle
+        // screen with nothing to close.
+        let pending: Vec<(String, String, isize)> = {
+            let mgr = state.lock().unwrap();
+            mgr.notifications
+                .iter()
+                .filter_map(|n| {
+                    n.orca_tab_id
+                        .clone()
+                        .map(|tab| (n.id.clone(), tab, n.source_hwnd))
+                })
+                .collect()
+        };
+        if pending.is_empty() {
+            continue;
+        }
+        if !crate::setup::load_auto_close_on_focus() {
+            continue;
+        }
+
+        // The active tab is UI state and stays set while Orca sits in the
+        // background, so the window has to hold focus for it to mean the user
+        // is actually reading that session.
+        let Some(hwnd) = pending.iter().map(|(_, _, h)| *h).find(|h| *h != 0) else {
+            continue;
+        };
+        if !win32::is_hwnd_focused(hwnd) {
+            continue;
+        }
+        let Some(active) = crate::orca::active_tab_id() else {
+            continue;
+        };
+
+        for (id, tab, _) in pending {
+            if tab == active {
+                log::debug!("[ORCA] active tab {} matched toast {}, closing", tab, id);
+                close_notification(&app, &state, &id, crate::stats::CloseReason::Focus);
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +771,8 @@ mod tests {
             source: String::new(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         }
     }
 
@@ -654,6 +782,47 @@ mod tests {
             event_display: event_display.to_string(),
             ..nd("notify-x")
         }
+    }
+
+    // ── closes_on_foreground tests ──
+
+    #[test]
+    fn foreground_closes_matching_window() {
+        let n = NotificationData {
+            source_hwnd: 4242,
+            ..nd("notify-1")
+        };
+        assert!(closes_on_foreground(&n, 4242, 4242));
+    }
+
+    #[test]
+    fn foreground_ignores_other_windows() {
+        let n = NotificationData {
+            source_hwnd: 4242,
+            ..nd("notify-1")
+        };
+        assert!(!closes_on_foreground(&n, 9999, 9999));
+    }
+
+    #[test]
+    fn foreground_ignores_windowless_notification() {
+        // Remote toasts never resolve a window, so a null foreground window
+        // must not read as "the user went back to it".
+        assert!(!closes_on_foreground(&nd("notify-1"), 0, 0));
+        assert!(!closes_on_foreground(&nd("notify-1"), 4242, 4242));
+    }
+
+    #[test]
+    fn foreground_never_closes_orca_toasts() {
+        // Every Orca session shares one window, so honoring the HWND match here
+        // would close all of them at once. The tab watcher owns these.
+        let n = NotificationData {
+            source_hwnd: 4242,
+            orca_terminal_handle: Some("term_abc".into()),
+            orca_tab_id: Some("tab-abc".into()),
+            ..nd("notify-1")
+        };
+        assert!(!closes_on_foreground(&n, 4242, 4242));
     }
 
     // ── resolve_auto_dismiss tests ──
@@ -846,6 +1015,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -872,6 +1043,8 @@ mod tests {
             source: "codex".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -892,6 +1065,8 @@ mod tests {
             source: "updater".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         assert!(data.process_tree.is_empty());
     }
@@ -909,6 +1084,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -964,6 +1141,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             });
         }
         let result = get_notification_for_window(&state, "notify-1");
@@ -989,6 +1168,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             });
             mgr.notifications.push(NotificationData {
                 id: "notify-2".to_string(),
@@ -1001,6 +1182,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             });
         }
 
@@ -1058,6 +1241,8 @@ mod tests {
                 source: source.to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             };
             assert_eq!(data.source, source);
         }
@@ -1077,6 +1262,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             };
             assert_eq!(data.auto_dismiss_seconds, seconds);
         }
@@ -1095,6 +1282,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let cloned = data.clone();
         assert_eq!(cloned.id, data.id);
@@ -1119,6 +1308,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
 
         {
@@ -1152,6 +1343,8 @@ mod tests {
                     source: "claude".to_string(),
                     hostname: None,
                     show_hostname: false,
+                    orca_terminal_handle: None,
+                    orca_tab_id: None,
                 });
             }
             assert_eq!(mgr.notifications.len(), 5);
@@ -1208,6 +1401,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             });
         }
 
@@ -1231,6 +1426,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let debug = format!("{:?}", data);
         assert!(debug.contains("test"));
@@ -1281,6 +1478,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1301,6 +1500,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1322,6 +1523,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1341,6 +1544,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1360,6 +1565,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1379,6 +1586,8 @@ mod tests {
             source: "".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1418,6 +1627,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             });
         }
         // 빈 ID로도 조회 가능
@@ -1441,6 +1652,8 @@ mod tests {
                 source: "claude".to_string(),
                 hostname: None,
                 show_hostname: false,
+                orca_terminal_handle: None,
+                orca_tab_id: None,
             });
             // 존재하지 않는 ID로 retain → 변화 없음
             mgr.notifications.retain(|n| n.id != "nonexistent");
@@ -1465,6 +1678,8 @@ mod tests {
                     source: "claude".to_string(),
                     hostname: None,
                     show_hostname: false,
+                    orca_terminal_handle: None,
+                    orca_tab_id: None,
                 });
             }
             // source_hwnd 기준 필터 (모든 항목이 100)
@@ -1491,6 +1706,8 @@ mod tests {
             source: "claude".to_string(),
             hostname: None,
             show_hostname: false,
+            orca_terminal_handle: None,
+            orca_tab_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();

@@ -73,7 +73,7 @@ crates/
   agent-toast-desktop/              # Windows-only Tauri app (was src-tauri/)
     src/main.rs, lib.rs, cli.rs, pipe.rs, http_server.rs,
     notification.rs, win32.rs, setup.rs, sound.rs, updater.rs,
-    changelog.rs, fonts.rs
+    changelog.rs, fonts.rs, orca.rs
     tauri.conf.json, tauri.release.conf.json, icons/, capabilities/
   agent-toast-send/                 # cross-platform CLI for remote Linux servers
     src/main.rs                     # send / init / uninstall subcommands
@@ -97,6 +97,7 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 | `updater.rs`      | Auto-update check via GitHub API (`CHECK_INTERVAL_MINUTES = 60`, i.e. hourly; 24h snooze), update notification with snooze/dedupe/sticky |
 | `changelog.rs`    | Extracts changelog from release body markers; `ReleaseInfo` payload sent to frontend                |
 | `fonts.rs`        | Enumerates installed system fonts via GDI `EnumFontFamiliesExW` for the toast font picker           |
+| `orca.rs`         | Orca integration: app PID and tab switching over the runtime's named pipe (`orca-runtime.json`), plus the on-screen tab read from its persisted state (`profiles/<active profile>/orca-data.json`) |
 
 ### Critical Win32 Logic
 
@@ -105,12 +106,15 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 - **FR-2**: skip notification if source already focused (`is_hwnd_focused`)
 - **FR-3**: auto-close on focus return via `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` + mpsc channel
 - **Window activation**: uses `SendInput` Alt-key simulation to bypass `SetForegroundWindow` restriction; restores minimized windows via `IsIconic` check
+- **Orca sessions bypass all of the above**: the shell's parent is a detached `orca-terminal-daemon.exe`, so the process tree reaches no window at all, and every session is a tab in one window titled `Orca`. When `ORCA_TERMINAL_HANDLE` is present (`orca.rs`), the window comes from the runtime's own app PID, and the tab drives the per-tab decisions: skip and auto-close only when Orca's recorded `activeTabId` equals this session's `ORCA_TAB_ID`, and switch to the session on click via `terminal.focus`
+- **The on-screen tab is not on the runtime pipe**: `terminal.resolveActive` reads like the method for it, but without a worktree argument it walks the tab map and returns the first entry no matter what the UI shows. The runtime reads the real value from its own store and exposes it only to plugins, and the RPC envelope permits exactly three frames (success, failure, keepalive), so nothing can be subscribed to either. `orca.rs` therefore reads `activeTabId` out of Orca's persisted state, re-parsing that file only when its mtime or length moves
 
 ### Thread Model
 
 - Main thread: Tauri runtime + GUI event loop
 - Pipe server thread: infinite loop accepting Named Pipe connections
 - Foreground listener thread: `SetWinEventHook` message loop → mpsc → foreground change handler
+- Orca tab watcher thread: polls Orca's recorded active tab every 400ms while Orca toasts are on screen. Switching tabs inside Orca fires no OS focus event, so it is the only way to notice the user returning to a session
 
 ## Frontend (src/)
 
@@ -145,6 +149,8 @@ agent-toast.exe --pid 1234 --event task_complete --dynamic   # Derive body from 
 ```
 
 Events: `task_complete`, `user_input_required`, `error`
+
+`ORCA_TERMINAL_HANDLE` and `ORCA_TAB_ID` env vars (exported by Orca into every managed terminal) are forwarded as `orca_terminal_handle` and `orca_tab_id`. The handle identifies the terminal and is what a toast click hands back to `terminal.focus`; the tab id is what skip and auto-close compare against Orca's recorded active tab. Only the local Windows path sends them; `agent-toast-send` leaves both unset because a remote host can reach neither the desktop's Orca runtime nor its state.
 
 `CLAUDE_PROJECT_DIR` env var is used as `title_hint` for window matching when `--title` is not provided. Its `.idea/.name` (the JetBrains project name, present when it differs from the folder name) is sent as `alt_title_hint`, a matching-only hint — the toast still displays `title_hint`.
 

@@ -415,19 +415,7 @@ fn find_windows_terminal_window() -> Option<isize> {
         wt_pids
     );
 
-    // Step 2: Find visible windows belonging to those PIDs
-    // EnumWindows returns windows in z-order (topmost first)
-    let result: Arc<Mutex<Option<isize>>> = Arc::new(Mutex::new(None));
-    let result_clone = result.clone();
-
-    unsafe {
-        let _ = EnumWindows(
-            Some(enum_wt_windows_callback),
-            LPARAM(&(wt_pids, result_clone) as *const _ as isize),
-        );
-    }
-
-    let found = result.lock().unwrap().take();
+    let found = find_visible_window_for_pids(&wt_pids);
     if let Some(hwnd) = found {
         let title = get_window_title(hwnd);
         debug!(
@@ -438,15 +426,40 @@ fn find_windows_terminal_window() -> Option<isize> {
     found
 }
 
+/// First visible window with a non-empty title owned by any of `pids`.
+///
+/// `EnumWindows` walks z-order, so the topmost (most recently used) window of
+/// a multi-window app comes first. Used for app hosts that own their window in
+/// a process outside the notifying session's parent chain: Windows Terminal
+/// (ConPTY) and Orca (detached terminal daemon).
 #[cfg(windows)]
-unsafe extern "system" fn enum_wt_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+pub fn find_visible_window_for_pids(pids: &[u32]) -> Option<isize> {
+    if pids.is_empty() {
+        return None;
+    }
+    let result: Arc<Mutex<Option<isize>>> = Arc::new(Mutex::new(None));
+    let payload = (pids.to_vec(), result.clone());
+
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_pid_windows_callback),
+            LPARAM(&payload as *const _ as isize),
+        );
+    }
+
+    let found = *result.lock().unwrap();
+    found
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn enum_pid_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let data = &*(lparam.0 as *const (Vec<u32>, Arc<Mutex<Option<isize>>>));
-    let (wt_pids, result) = data;
+    let (pids, result) = data;
 
     if IsWindowVisible(hwnd).as_bool() {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if wt_pids.contains(&pid) {
+        if pids.contains(&pid) {
             // Check non-empty title (skip hidden/helper windows)
             let title = get_window_title(hwnd.0 as isize);
             if !title.is_empty() {
@@ -824,6 +837,10 @@ pub fn get_window_title(_hwnd: isize) -> String {
 #[cfg(not(windows))]
 pub fn is_hwnd_focused(_hwnd: isize) -> bool {
     false
+}
+#[cfg(not(windows))]
+pub fn find_visible_window_for_pids(_pids: &[u32]) -> Option<isize> {
+    None
 }
 #[cfg(not(windows))]
 pub fn activate_window(_hwnd: isize) {}
