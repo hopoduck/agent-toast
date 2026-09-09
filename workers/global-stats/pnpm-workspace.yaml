@@ -1,0 +1,6 @@
+# Marks this worker as its own pnpm root so `pnpm --dir workers/global-stats`
+# resolves here instead of walking up to the repository root.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true

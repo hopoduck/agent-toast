@@ -14,15 +14,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # pnpm version comes from package.json "packageManager"
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24.21.0
           cache: 'pnpm'
 
       - name: Install Rust stable
@@ -82,15 +81,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # pnpm version comes from package.json "packageManager"
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24.21.0
 
       - name: Install worker dependencies
         run: pnpm --dir workers/global-stats install

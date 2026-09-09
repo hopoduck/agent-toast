@@ -52,15 +52,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # pnpm version comes from package.json "packageManager"
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24.21.0
           cache: 'pnpm'
 
       - name: Install Rust stable
@@ -96,12 +95,17 @@ jobs:
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           args: --config crates/agent-toast-desktop/tauri.release.conf.json
 
-      - name: Upload portable exe
-        uses: softprops/action-gh-release@v2
+      - name: Upload portable exe and debug symbols
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
-          files: target/release/agent-toast.exe
+          # agent_toast.pdb is the symbol file for this exact build. Without it a
+          # frozen/crashed process can only be read as module+offset, and the PDB
+          # cannot be reproduced later because the runner toolchain drifts.
+          files: |
+            target/release/agent-toast.exe
+            target/release/agent_toast.pdb
 
   build-send:
     needs: prepare
@@ -189,7 +193,7 @@ jobs:
           cat SHA256SUMS
 
       - name: Attach to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

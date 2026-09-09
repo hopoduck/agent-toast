@@ -3,6 +3,11 @@
   "private": true,
   "version": "1.4.0",
   "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "volta": {
+    "node": "24.21.0",
+    "pnpm": "12.3.4"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
