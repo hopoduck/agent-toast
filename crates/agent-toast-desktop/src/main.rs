@@ -70,6 +70,12 @@ fn get_parent_pid() -> u32 {
     }
 }
 
+/// 싱글턴 점유의 증거. 살아 있는 동안만 이 인스턴스가 유일하다.
+#[cfg(windows)]
+type SingletonGuard = windows::Win32::Foundation::HANDLE;
+#[cfg(not(windows))]
+type SingletonGuard = ();
+
 /// Try to acquire a global named mutex. Returns the handle if this is the first instance.
 /// The handle must be kept alive for the lifetime of the app.
 #[cfg(windows)]
@@ -104,6 +110,25 @@ fn try_acquire_singleton() -> Option<windows::Win32::Foundation::HANDLE> {
 fn try_acquire_singleton() -> Option<()> {
     Some(())
 }
+
+/// 재시작 직후에는 옛 프로세스가 아직 뮤텍스를 쥔 채 종료 중일 수 있다. 정상 종료는
+/// 순식간이지만 웹뷰 정리가 밀리면 몇 초까지 늘어난다. 그 사이에 한 번만 보고 물러나면
+/// 새 인스턴스가 그대로 죽어 앱이 통째로 사라진다. 짧게 기다렸다 다시 시도한다.
+fn acquire_singleton_waiting(timeout: std::time::Duration) -> Option<SingletonGuard> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Some(handle) = try_acquire_singleton() {
+            return Some(handle);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// 재시작 경합을 흡수할 시간. 오늘 관측된 최악의 종료 지연이 2초대였다.
+const SINGLETON_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn main() {
     let args = Cli::parse();
@@ -239,7 +264,9 @@ fn main() {
     }
 
     if args.setup || args.event.is_none() {
-        let _mutex = try_acquire_singleton();
+        // 워치독/트레이 재시작이 타는 경로다. 옛 프로세스가 아직 종료 중일 수 있어
+        // 한 번만 보고 물러나면 안 된다.
+        let _mutex = acquire_singleton_waiting(SINGLETON_WAIT);
         if _mutex.is_none() {
             // Another instance exists; try to signal it via pipe, then exit
             info!("Another instance is already running, exiting.");

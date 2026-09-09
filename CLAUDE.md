@@ -98,6 +98,7 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 | `changelog.rs`    | Extracts changelog from release body markers; `ReleaseInfo` payload sent to frontend                |
 | `fonts.rs`        | Enumerates installed system fonts via GDI `EnumFontFamiliesExW` for the toast font picker           |
 | `orca.rs`         | Orca integration: app PID and tab switching over the runtime's named pipe (`orca-runtime.json`), plus the on-screen tab read from its persisted state (`profiles/<active profile>/orca-data.json`) |
+| `watchdog.rs`     | Main-thread stall detection and recovery — heartbeat ACK, per-thread breadcrumbs, health file, `WM_QUIT` unstick, restart escalation |
 
 ### Critical Win32 Logic
 
@@ -115,6 +116,17 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 - Pipe server thread: infinite loop accepting Named Pipe connections
 - Foreground listener thread: `SetWinEventHook` message loop → mpsc → foreground change handler
 - Orca tab watcher thread: polls Orca's recorded active tab every 400ms while Orca toasts are on screen. Switching tabs inside Orca fires no OS focus event, so it is the only way to notice the user returning to a session
+- Watchdog thread: asks the main thread for an ACK every 5s and never calls anything that needs it
+
+### Main-Thread Stall and Recovery (`watchdog.rs`)
+
+`wry` waits for WebView2 controller creation in `webview2_com::wait_with_pump`, an unbounded `GetMessage`/`DispatchMessage` loop with no timeout. When that callback never arrives the main thread stays inside it forever: Win32 messages keep being dispatched, so the process still answers `WM_NULL` and looks alive to Windows, but tao's user-event queue is never drained. Window creation, show, destroy, reposition and tray menu commands all pile up unexecuted. Observed live on 2026-09-09: 15 toasts logged as created over two hours with no window ever appearing.
+
+- **Detection**: a worker thread posts `run_on_main_thread` ACKs every 5s. Nothing else can distinguish this state, because the main thread is pumping messages the whole time.
+- **Guard**: toast windows are built inside `run_on_main_thread` so the build is bracketed by main-thread breadcrumbs. Recovery only fires `WM_QUIT` when the main breadcrumb is `notify-build-window` or `setup-build-window`. Posting it while the main thread is merely slow would reach tao's own loop and quit the app.
+- **Unstick**: `PostThreadMessageW(main_tid, WM_QUIT)` makes the nested `GetMessage` return 0, so `wry` fails that one window with `TaskCanceled` and the event loop resumes. Verified live.
+- **Escalation**: after `MAX_UNSTICKS` within `UNSTICK_RESET`, or when the stall is not in a webview build, the watchdog thread restarts the process itself (`current_exe` + `exit`), since Tauri's own `restart()` routes through the dead main thread. The replacement instance is marked via `AGENT_TOAST_RECOVERED_MS` and shows one toast explaining the gap.
+- **Singleton wait**: the replacement starts while the old process is still exiting, so `main.rs` retries the mutex for `SINGLETON_WAIT` instead of giving up immediately. Without it a slow shutdown leaves nothing running.
 
 ## Frontend (src/)
 

@@ -580,6 +580,7 @@ pub fn start_foreground_listener(on_foreground_change: impl Fn(isize) + Send + '
 
     // Thread 2: receive HWND changes and invoke callback
     std::thread::spawn(move || {
+        crate::watchdog::register(crate::watchdog::Thread::Foreground);
         while let Ok(hwnd) = rx.recv() {
             on_foreground_change(hwnd);
         }

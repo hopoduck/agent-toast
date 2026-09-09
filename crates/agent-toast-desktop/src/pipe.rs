@@ -35,6 +35,7 @@ where
     F: Fn(NotifyRequest) + Send + 'static,
 {
     std::thread::spawn(move || {
+        crate::watchdog::register(crate::watchdog::Thread::Pipe);
         let mut fail_count: u32 = 0;
         loop {
             if let Err(e) = run_pipe_instance(&on_request) {
@@ -83,9 +84,11 @@ where
 
     // ConnectNamedPipe returns Result<()> in windows 0.58
     log::debug!("[PIPE] Waiting for client connection...");
+    crate::watchdog::mark(crate::watchdog::Step::PipeWaitConnect);
     unsafe { ConnectNamedPipe(handle, None) }
         .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
     log::debug!("[PIPE] Client connected");
+    crate::watchdog::mark(crate::watchdog::Step::PipeRead);
 
     // Read length prefix
     let mut len_buf = [0u8; 4];

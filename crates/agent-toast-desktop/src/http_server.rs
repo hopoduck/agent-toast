@@ -39,13 +39,18 @@ where
 
     let wake_addrs = wake_targets(bind_addr);
     std::thread::spawn(move || {
+        crate::watchdog::register(crate::watchdog::Thread::Http);
         loop {
             if stop_thread.load(Ordering::SeqCst) {
                 log::info!("[HTTP] stop requested, shutting down");
                 break;
             }
             match server.recv_timeout(POLL_INTERVAL) {
-                Ok(Some(req)) => handle_request(req, &on_request),
+                Ok(Some(req)) => {
+                    crate::watchdog::mark(crate::watchdog::Step::HttpRecv);
+                    handle_request(req, &on_request);
+                    crate::watchdog::mark(crate::watchdog::Step::Idle);
+                }
                 Ok(None) => continue,
                 Err(e) => {
                     log::warn!("[HTTP] recv error: {e}");

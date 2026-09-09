@@ -131,6 +131,11 @@ impl NotificationManager {
             counter: 0,
         }
     }
+
+    /// 현재 살아 있는 토스트 id 목록. 워치독 스냅샷용.
+    pub fn live_ids(&self) -> Vec<String> {
+        self.notifications.iter().map(|n| n.id.clone()).collect()
+    }
 }
 
 pub type NotificationManagerState = Arc<Mutex<NotificationManager>>;
@@ -209,8 +214,9 @@ pub fn show_notification(
         }
     }
 
-    // For internal notifications (updater), skip win32 lookups
-    let is_internal = request.source == "updater";
+    // 앱이 스스로 띄우는 알림(업데이터, 워치독 복구)은 띄운 주인이 되는 창이 없다.
+    // pid 도 0 이라 프로세스 트리를 걸어봐야 엉뚱한 창을 고를 뿐이므로 건너뛴다.
+    let is_internal = matches!(request.source.as_str(), "updater" | "watchdog");
 
     let (source_hwnd, process_tree, window_title) = if is_internal {
         (
@@ -249,6 +255,7 @@ pub fn show_notification(
             if let (Some(active), Some(tab)) = (active, request.orca_tab_id.as_deref()) {
                 if active == tab {
                     crate::stats::record_skipped_focused(&stats_state, &ev, &src, remote);
+                    crate::watchdog::mark(crate::watchdog::Step::Idle);
                     return;
                 }
             }
@@ -257,6 +264,7 @@ pub fn show_notification(
         let tree = request.process_tree.clone().unwrap_or_default();
         (hwnd, tree, resolve_display_title(&request, hwnd))
     } else {
+        crate::watchdog::mark(crate::watchdog::Step::NotifyWin32Lookup);
         let tree = request
             .process_tree
             .clone()
@@ -305,6 +313,7 @@ pub fn show_notification(
         log::debug!("[DEBUG] is_hwnd_focused({})={}", hwnd, focused);
         if focused {
             crate::stats::record_skipped_focused(&stats_state, &ev, &src, remote);
+            crate::watchdog::mark(crate::watchdog::Step::Idle);
             return;
         }
 
@@ -346,6 +355,9 @@ pub fn show_notification(
     {
         let position = crate::setup::load_notification_position();
         let monitor = crate::setup::load_notification_monitor();
+        // primary_monitor()/available_monitors() 는 메인 스레드에 왕복 질의하고
+        // 응답 대기에 타임아웃이 없다. 먹통이면 여기서 못 빠져나온다.
+        crate::watchdog::mark(crate::watchdog::Step::NotifyCalcPosition);
         let (x, y) = calculate_notification_position(
             app,
             &position,
@@ -354,7 +366,24 @@ pub fn show_notification(
             NOTIFICATION_HEIGHT,
         );
 
-        let window = WebviewWindowBuilder::new(app, &id, WebviewUrl::App("index.html".into()))
+        // 창 생성은 반드시 메인 스레드에서 한다. 워커 스레드에서 `build()` 를 부르면
+        // tao 에 메시지만 던지고 결과를 안 기다린 채 Ok 를 돌려주므로, 실제로는 아무
+        // 창도 안 생겼는데 성공 로그가 남는다. 메인 스레드에서 직접 부르면 로그가
+        // 사실과 맞고, 무엇보다 웹뷰 생성이 중첩 메시지 루프에 갇히는 구간이
+        // 메인 스레드 breadcrumb 으로 남아 워치독이 그 상태를 구분할 수 있다.
+        let build_app = app.clone();
+        let build_id = id.clone();
+        let build_state = state.clone();
+        let build_data = data.clone();
+        let build_stats = stats_state.clone();
+        let (build_ev, build_src) = (ev.clone(), src.clone());
+        let dispatched = app.run_on_main_thread(move || {
+            crate::watchdog::mark(crate::watchdog::Step::NotifyBuildWindow);
+            let window = WebviewWindowBuilder::new(
+                &build_app,
+                &build_id,
+                WebviewUrl::App("index.html".into()),
+            )
             .title("Agent Toast")
             .inner_size(NOTIFICATION_WIDTH, NOTIFICATION_HEIGHT)
             .position(x, y)
@@ -368,54 +397,72 @@ pub fn show_notification(
             .focused(false)
             .visible(false)
             .build();
+            crate::watchdog::mark(crate::watchdog::Step::NotifyAfterBuild);
 
-        match window {
-            Ok(win) => {
-                log::debug!("[NOTIFY] Window created: id={}", id);
-                crate::stats::record_shown(&stats_state, &ev, &src, remote);
-                // Explicitly set position with Logical coordinates (builder may use Physical)
-                let _ =
-                    win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+            match window {
+                Ok(win) => {
+                    log::debug!("[NOTIFY] Window created: id={}", build_id);
+                    crate::stats::record_shown(&build_stats, &build_ev, &build_src, remote);
+                    // Explicitly set position with Logical coordinates (builder may use Physical)
+                    let _ = win
+                        .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
 
-                // 알림 소리 재생
-                if crate::setup::load_notification_sound() {
-                    crate::sound::play_notification_sound();
-                }
-                // Also emit event as backup (frontend primarily uses invoke)
-                let data_clone = data.clone();
-                let label = id.clone();
-                let app_clone = app.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    match app_clone.emit_to(&label, "notification-data", &data_clone) {
-                        Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
-                        Err(e) => {
-                            log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e)
-                        }
+                    // 알림 소리 재생 (둘 다 비동기라 메인 스레드를 잡지 않는다)
+                    if crate::setup::load_notification_sound() {
+                        crate::sound::play_notification_sound();
                     }
-                });
-                // 폴백: 400ms 내 resize_notify가 안 오면 기본 높이로 표시 (프론트 실패 대비)
-                let fallback_label = id.clone();
-                let fallback_app = app.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(400));
-                    if let Some(win) = fallback_app.get_webview_window(&fallback_label) {
-                        // 쿼리 실패 = 창이 이미 파괴됨 → show() 건너뛰는 게 맞음
-                        if !win.is_visible().unwrap_or(true) {
+                    // Also emit event as backup (frontend primarily uses invoke)
+                    let data_clone = build_data.clone();
+                    let label = build_id.clone();
+                    let app_clone = build_app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        match app_clone.emit_to(&label, "notification-data", &data_clone) {
+                            Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
+                            Err(e) => {
+                                log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e)
+                            }
+                        }
+                    });
+                    // 폴백: 400ms 내 resize_notify가 안 오면 기본 높이로 표시 (프론트 실패 대비).
+                    // `is_visible()` 은 메인 스레드에 응답을 요구하는 왕복 호출이라
+                    // 먹통일 때 이 스레드가 영영 대기했다. 이미 보이는 창에 show() 를
+                    // 다시 불러도 무해하므로 확인 없이 그냥 부른다.
+                    let fallback_label = build_id.clone();
+                    let fallback_app = build_app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(400));
+                        if let Some(win) = fallback_app.get_webview_window(&fallback_label) {
                             let _ = win.show();
                         }
-                    }
-                });
+                    });
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[NOTIFY] Window creation FAILED: id={}, err={}",
+                        build_id,
+                        e
+                    );
+                    rollback_pending(&build_state, &build_id);
+                }
             }
-            Err(e) => {
-                log::debug!("[NOTIFY] Window creation FAILED: id={}, err={}", id, e);
-                // Rollback: remove from notifications list (and any height entry)
-                let mut mgr = state.lock().unwrap();
-                mgr.notifications.retain(|n| n.id != id);
-                mgr.heights.remove(&id);
-            }
+            crate::watchdog::mark(crate::watchdog::Step::Idle);
+        });
+
+        // 메인 스레드에 태스크조차 못 넣은 경우(이벤트 루프 종료 등)도 되돌린다.
+        if let Err(e) = dispatched {
+            log::warn!("[NOTIFY] main-thread dispatch failed: id={}, err={}", id, e);
+            rollback_pending(state, &id);
         }
     }
+    crate::watchdog::mark(crate::watchdog::Step::Idle);
+}
+
+/// 창이 실제로 안 만들어졌을 때 예약해 둔 자리를 되돌린다.
+fn rollback_pending(state: &NotificationManagerState, id: &str) {
+    let mut mgr = state.lock().unwrap();
+    mgr.notifications.retain(|n| n.id != id);
+    mgr.heights.remove(id);
 }
 
 pub fn close_notification(
@@ -425,6 +472,7 @@ pub fn close_notification(
     reason: crate::stats::CloseReason,
 ) {
     log::debug!("[DEBUG] close_notification called: id={}", id);
+    crate::watchdog::mark(crate::watchdog::Step::NotifyClose);
     let mut mgr = state.lock().unwrap();
     let found = mgr.notifications.iter().find(|n| n.id == id).cloned();
     mgr.notifications.retain(|n| n.id != id);
@@ -459,6 +507,7 @@ pub fn close_notification(
 
     // Reposition remaining notifications
     reposition_notifications(app, &remaining, &heights);
+    crate::watchdog::mark(crate::watchdog::Step::Idle);
 }
 
 pub fn reposition_all(app: &AppHandle, state: &NotificationManagerState) {
@@ -476,10 +525,12 @@ pub fn resize_notification(
     id: &str,
     height: f64,
 ) {
+    crate::watchdog::mark(crate::watchdog::Step::NotifyResize);
     let (notifications, heights) = {
         let mut mgr = state.lock().unwrap();
         // 이미 닫힌 알림이면 무시
         if !mgr.notifications.iter().any(|n| n.id == id) {
+            crate::watchdog::mark(crate::watchdog::Step::Idle);
             return;
         }
         mgr.heights.insert(id.to_string(), height);
@@ -495,6 +546,7 @@ pub fn resize_notification(
         )));
     }
     reposition_notifications(app, &notifications, &heights);
+    crate::watchdog::mark(crate::watchdog::Step::Idle);
     if let Some(win) = app.get_webview_window(id) {
         let _ = win.show();
     }
@@ -664,7 +716,9 @@ pub fn on_foreground_changed(
     state: &NotificationManagerState,
     focused_hwnd: isize,
 ) {
+    crate::watchdog::mark(crate::watchdog::Step::ForegroundChange);
     if !crate::setup::load_auto_close_on_focus() {
+        crate::watchdog::mark(crate::watchdog::Step::Idle);
         return;
     }
 
@@ -672,6 +726,7 @@ pub fn on_foreground_changed(
 
     let mgr = state.lock().unwrap();
     if mgr.notifications.is_empty() {
+        crate::watchdog::mark(crate::watchdog::Step::Idle);
         return;
     }
 
@@ -695,6 +750,7 @@ pub fn on_foreground_changed(
     for id in to_close {
         close_notification(app, state, &id, crate::stats::CloseReason::Focus);
     }
+    crate::watchdog::mark(crate::watchdog::Step::Idle);
 }
 
 /// How often the Orca watcher asks the runtime which tab is on screen.

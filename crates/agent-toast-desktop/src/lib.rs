@@ -10,6 +10,7 @@ pub mod setup;
 pub mod sound;
 pub mod stats;
 mod updater;
+pub mod watchdog;
 pub mod win32;
 
 use log::LevelFilter;
@@ -334,7 +335,11 @@ pub fn open_setup_window_with_tab(app: &AppHandle, tab: Option<&str>) {
             builder = builder.icon(icon).expect("failed to set dev window icon");
         }
     }
+    // 이 함수는 메인 스레드에서 돈다. 웹뷰 생성이 중첩 메시지 루프에 갇히면 여기서
+    // 못 빠져나오므로 breadcrumb 을 남긴다.
+    watchdog::mark(watchdog::Step::SetupBuildWindow);
     let _ = builder.build();
+    watchdog::mark(watchdog::Step::Idle);
 }
 
 pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
@@ -531,6 +536,10 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
                     }
                 })
                 .build(&tray_handle)?;
+
+            // 메인 스레드 응답성 감시. 다른 스레드가 breadcrumb 을 남기기 전에 켜 둔다.
+            watchdog::start(&handle);
+            watchdog::notify_if_recovered(&handle, &state);
 
             // Start Named Pipe server for subsequent calls
             let pipe_handle = handle.clone();
