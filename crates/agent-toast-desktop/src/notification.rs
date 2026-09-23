@@ -136,6 +136,22 @@ impl NotificationManager {
     pub fn live_ids(&self) -> Vec<String> {
         self.notifications.iter().map(|n| n.id.clone()).collect()
     }
+
+    fn next_id(&mut self) -> String {
+        self.counter += 1;
+        format!("notify-{}", self.counter)
+    }
+
+    /// `id` 항목에 새 id 를 붙여 돌려준다. 쌓인 순서는 제자리에서 유지된다.
+    /// 그 사이 항목이 닫혔으면 `None`.
+    fn reassign_id(&mut self, id: &str) -> Option<NotificationData> {
+        let index = self.notifications.iter().position(|n| n.id == id)?;
+        let new_id = self.next_id();
+        self.heights.remove(id);
+        let entry = &mut self.notifications[index];
+        entry.id = new_id;
+        Some(entry.clone())
+    }
 }
 
 pub type NotificationManagerState = Arc<Mutex<NotificationManager>>;
@@ -321,8 +337,7 @@ pub fn show_notification(
     };
 
     let mut mgr = state.lock().unwrap();
-    mgr.counter += 1;
-    let id = format!("notify-{}", mgr.counter);
+    let id = mgr.next_id();
 
     let auto_dismiss_seconds = resolve_auto_dismiss(
         &request.source,
@@ -331,7 +346,7 @@ pub fn show_notification(
     );
 
     let data = NotificationData {
-        id: id.clone(),
+        id,
         window_title,
         event_display: request.event_display().to_string(),
         message: request.message,
@@ -366,96 +381,174 @@ pub fn show_notification(
             NOTIFICATION_HEIGHT,
         );
 
-        // 창 생성은 반드시 메인 스레드에서 한다. 워커 스레드에서 `build()` 를 부르면
-        // tao 에 메시지만 던지고 결과를 안 기다린 채 Ok 를 돌려주므로, 실제로는 아무
-        // 창도 안 생겼는데 성공 로그가 남는다. 메인 스레드에서 직접 부르면 로그가
-        // 사실과 맞고, 무엇보다 웹뷰 생성이 중첩 메시지 루프에 갇히는 구간이
-        // 메인 스레드 breadcrumb 으로 남아 워치독이 그 상태를 구분할 수 있다.
-        let build_app = app.clone();
-        let build_id = id.clone();
-        let build_state = state.clone();
-        let build_data = data.clone();
-        let build_stats = stats_state.clone();
-        let (build_ev, build_src) = (ev.clone(), src.clone());
-        let dispatched = app.run_on_main_thread(move || {
-            crate::watchdog::mark(crate::watchdog::Step::NotifyBuildWindow);
-            let window = WebviewWindowBuilder::new(
-                &build_app,
-                &build_id,
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("Agent Toast")
-            .inner_size(NOTIFICATION_WIDTH, NOTIFICATION_HEIGHT)
-            .position(x, y)
-            .decorations(false)
-            .transparent(true)
-            .shadow(false)
-            .background_color(Color(0, 0, 0, 0))
-            .always_on_top(true)
-            .resizable(false)
-            .skip_taskbar(true)
-            .focused(false)
-            .visible(false)
-            .build();
-            crate::watchdog::mark(crate::watchdog::Step::NotifyAfterBuild);
+        dispatch_build(app, state, data, (x, y), true);
+    }
+    crate::watchdog::mark(crate::watchdog::Step::Idle);
+}
 
-            match window {
-                Ok(win) => {
-                    log::debug!("[NOTIFY] Window created: id={}", build_id);
-                    crate::stats::record_shown(&build_stats, &build_ev, &build_src, remote);
-                    // Explicitly set position with Logical coordinates (builder may use Physical)
-                    let _ = win
-                        .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+/// 토스트 창 생성을 메인 스레드로 보낸다. `retry` 는 웹뷰가 취소됐을 때 한 번 더
+/// 만들어 볼지 여부.
+///
+/// 창 생성은 반드시 메인 스레드에서 한다. 워커 스레드에서 `build()` 를 부르면
+/// tao 에 메시지만 던지고 결과를 안 기다린 채 Ok 를 돌려주므로, 실제로는 아무
+/// 창도 안 생겼는데 성공 로그가 남는다. 메인 스레드에서 직접 부르면 로그가
+/// 사실과 맞고, 무엇보다 웹뷰 생성이 중첩 메시지 루프에 갇히는 구간이
+/// 메인 스레드 breadcrumb 으로 남아 워치독이 그 상태를 구분할 수 있다.
+///
+/// 메인 스레드 밖에서만 부른다. 메인 스레드에서 부르면 큐를 거치지 않고 그 자리에서
+/// 실행된다(tauri-runtime-wry `send_user_message`).
+fn dispatch_build(
+    app: &AppHandle,
+    state: &NotificationManagerState,
+    data: NotificationData,
+    pos: (f64, f64),
+    retry: bool,
+) {
+    let id = data.id.clone();
+    let (build_app, build_state) = (app.clone(), state.clone());
+    let dispatched = app.run_on_main_thread(move || {
+        build_window(&build_app, &build_state, data, pos, retry);
+    });
 
-                    // 알림 소리 재생 (둘 다 비동기라 메인 스레드를 잡지 않는다)
-                    if crate::setup::load_notification_sound() {
-                        crate::sound::play_notification_sound();
-                    }
-                    // Also emit event as backup (frontend primarily uses invoke)
-                    let data_clone = build_data.clone();
-                    let label = build_id.clone();
-                    let app_clone = build_app.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        match app_clone.emit_to(&label, "notification-data", &data_clone) {
-                            Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
-                            Err(e) => {
-                                log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e)
-                            }
-                        }
-                    });
-                    // 폴백: 400ms 내 resize_notify가 안 오면 기본 높이로 표시 (프론트 실패 대비).
-                    // `is_visible()` 은 메인 스레드에 응답을 요구하는 왕복 호출이라
-                    // 먹통일 때 이 스레드가 영영 대기했다. 이미 보이는 창에 show() 를
-                    // 다시 불러도 무해하므로 확인 없이 그냥 부른다.
-                    let fallback_label = build_id.clone();
-                    let fallback_app = build_app.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(400));
-                        if let Some(win) = fallback_app.get_webview_window(&fallback_label) {
-                            let _ = win.show();
-                        }
-                    });
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[NOTIFY] Window creation FAILED: id={}, err={}",
-                        build_id,
-                        e
-                    );
-                    rollback_pending(&build_state, &build_id);
-                }
+    // 메인 스레드에 태스크조차 못 넣은 경우(이벤트 루프 종료 등)도 되돌린다.
+    if let Err(e) = dispatched {
+        log::warn!("[NOTIFY] main-thread dispatch failed: id={}, err={}", id, e);
+        rollback_pending(state, &id);
+    }
+}
+
+/// 토스트 창을 만든다. 메인 스레드 전용.
+fn build_window(
+    app: &AppHandle,
+    state: &NotificationManagerState,
+    data: NotificationData,
+    (x, y): (f64, f64),
+    retry: bool,
+) {
+    // 큐에서 기다리는 사이 닫혔으면(포커스 복귀 등) 만들지 않는다. 만들면 백업
+    // 이벤트가 내용을 채워서, 이미 본 토스트가 다시 뜬다.
+    let still_open = state
+        .lock()
+        .unwrap()
+        .notifications
+        .iter()
+        .any(|n| n.id == data.id);
+    if !still_open {
+        log::debug!(
+            "[NOTIFY] closed before its window was built: id={}",
+            data.id
+        );
+        return;
+    }
+
+    let unsticks_before = crate::watchdog::unstick_count();
+    crate::watchdog::mark(crate::watchdog::Step::NotifyBuildWindow);
+    let window = WebviewWindowBuilder::new(app, &data.id, WebviewUrl::App("index.html".into()))
+        .title("Agent Toast")
+        .inner_size(NOTIFICATION_WIDTH, NOTIFICATION_HEIGHT)
+        .position(x, y)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .background_color(Color(0, 0, 0, 0))
+        .always_on_top(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .focused(false)
+        .visible(false)
+        .build();
+    crate::watchdog::mark(crate::watchdog::Step::NotifyAfterBuild);
+
+    // 워치독이 이 생성을 깨웠다면 웹뷰는 취소됐고, 창은 떠도 영영 그려지지 않는다.
+    if crate::watchdog::unstick_count() != unsticks_before {
+        if let Ok(win) = &window {
+            let _ = win.destroy();
+        }
+        retry_canceled_build(app, state, &data.id, (x, y), retry);
+        crate::watchdog::mark(crate::watchdog::Step::Idle);
+        return;
+    }
+
+    match window {
+        Ok(win) => {
+            log::debug!("[NOTIFY] Window created: id={}", data.id);
+            let stats_state = app.state::<crate::stats::StatsState>().inner().clone();
+            crate::stats::record_shown(
+                &stats_state,
+                &data.event_display,
+                &data.source,
+                data.hostname.is_some(),
+            );
+            // Explicitly set position with Logical coordinates (builder may use Physical)
+            let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+
+            // 알림 소리 재생 (둘 다 비동기라 메인 스레드를 잡지 않는다)
+            if crate::setup::load_notification_sound() {
+                crate::sound::play_notification_sound();
             }
-            crate::watchdog::mark(crate::watchdog::Step::Idle);
-        });
-
-        // 메인 스레드에 태스크조차 못 넣은 경우(이벤트 루프 종료 등)도 되돌린다.
-        if let Err(e) = dispatched {
-            log::warn!("[NOTIFY] main-thread dispatch failed: id={}, err={}", id, e);
-            rollback_pending(state, &id);
+            // Also emit event as backup (frontend primarily uses invoke)
+            let label = data.id.clone();
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                match app_clone.emit_to(&label, "notification-data", &data) {
+                    Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
+                    Err(e) => {
+                        log::debug!("[NOTIFY] Event emit failed: id={}, err={}", label, e)
+                    }
+                }
+            });
+            // 폴백: 400ms 내 resize_notify가 안 오면 기본 높이로 표시 (프론트 실패 대비).
+            // `is_visible()` 은 메인 스레드에 응답을 요구하는 왕복 호출이라
+            // 먹통일 때 이 스레드가 영영 대기했다. 이미 보이는 창에 show() 를
+            // 다시 불러도 무해하므로 확인 없이 그냥 부른다.
+            let fallback_label = win.label().to_string();
+            let fallback_app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                if let Some(win) = fallback_app.get_webview_window(&fallback_label) {
+                    let _ = win.show();
+                }
+            });
+        }
+        Err(e) => {
+            log::warn!("[NOTIFY] Window creation FAILED: id={}, err={}", data.id, e);
+            rollback_pending(state, &data.id);
         }
     }
     crate::watchdog::mark(crate::watchdog::Step::Idle);
+}
+
+/// 워치독이 웹뷰 생성을 취소시킨 토스트를 한 번만 다시 만든다.
+///
+/// 멈춰 있던 동안 사용자가 그 창이나 탭으로 돌아갔다면 포커스 복귀 자동 닫기가
+/// 항목을 이미 지웠으므로, 항목이 남아 있을 때만 다시 만든다. 창 라벨은 새 id 로
+/// 받는다. 방금 파기한 창의 라벨이 언제 풀리는지 보장이 없다. 다시 만들다 또
+/// 취소되면 포기한다. 연달아 걸리는 경우는 워치독이 재시작으로 처리한다.
+fn retry_canceled_build(
+    app: &AppHandle,
+    state: &NotificationManagerState,
+    id: &str,
+    pos: (f64, f64),
+    retry: bool,
+) {
+    if !retry {
+        log::warn!("[NOTIFY] webview canceled by watchdog again, dropping: id={id}");
+        rollback_pending(state, id);
+        return;
+    }
+    let reassigned = state.lock().unwrap().reassign_id(id);
+    let Some(data) = reassigned else {
+        log::warn!("[NOTIFY] webview canceled by watchdog, toast already closed: id={id}");
+        return;
+    };
+    log::warn!(
+        "[NOTIFY] webview canceled by watchdog, retrying: id={id} -> {}",
+        data.id
+    );
+    // 멈춘 동안 쌓인 이벤트가 먼저 처리되도록 다른 스레드에서 큐 뒤에 넣는다.
+    let (app, state) = (app.clone(), state.clone());
+    std::thread::spawn(move || dispatch_build(&app, &state, data, pos, false));
 }
 
 /// 창이 실제로 안 만들어졌을 때 예약해 둔 자리를 되돌린다.
@@ -1272,13 +1365,44 @@ mod tests {
     #[test]
     fn notification_id_format() {
         // ID 형식: "notify-{counter}"
-        let state = create_manager();
-        {
-            let mut mgr = state.lock().unwrap();
-            mgr.counter += 1;
-            let id = format!("notify-{}", mgr.counter);
-            assert_eq!(id, "notify-1");
+        let mut mgr = NotificationManager::new();
+        assert_eq!(mgr.next_id(), "notify-1");
+        assert_eq!(mgr.next_id(), "notify-2");
+    }
+
+    // ── reassign_id (웹뷰 취소 후 재생성) ──
+
+    #[test]
+    fn reassign_id_keeps_stack_position() {
+        let mut mgr = NotificationManager::new();
+        for _ in 0..3 {
+            let id = mgr.next_id();
+            mgr.notifications.push(nd(&id));
         }
+        let data = mgr.reassign_id("notify-2").expect("entry exists");
+        assert_eq!(data.id, "notify-4");
+        assert_eq!(mgr.live_ids(), ["notify-1", "notify-4", "notify-3"]);
+    }
+
+    #[test]
+    fn reassign_id_drops_stale_height() {
+        let mut mgr = NotificationManager::new();
+        let id = mgr.next_id();
+        mgr.notifications.push(nd(&id));
+        mgr.heights.insert(id.clone(), 200.0);
+        let data = mgr.reassign_id(&id).unwrap();
+        assert!(mgr.heights.is_empty());
+        assert!(!mgr.heights.contains_key(&data.id));
+    }
+
+    #[test]
+    fn reassign_id_skips_closed_toast() {
+        // 먹통 동안 포커스 복귀로 이미 닫힌 토스트는 다시 만들지 않는다.
+        let mut mgr = NotificationManager::new();
+        mgr.notifications.push(nd("notify-1"));
+        mgr.counter = 1;
+        assert!(mgr.reassign_id("notify-9").is_none());
+        assert_eq!(mgr.counter, 1, "no id should be spent on a closed toast");
     }
 
     // ── NotificationData source field tests ──

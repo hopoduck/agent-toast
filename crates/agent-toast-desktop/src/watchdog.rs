@@ -151,6 +151,15 @@ static LAST_ACK_MS: AtomicU64 = AtomicU64::new(0);
 /// 메시지를 보내야 해서 필요하다. 0 이면 아직 확보 전.
 static MAIN_TID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
+/// 중첩 루프를 깨운 누적 횟수. 깨우면 그때 만들던 창의 웹뷰가 취소되는데, wry 는
+/// 웹뷰 없는 창을 `Ok` 로 돌려준다. 창을 만드는 쪽은 생성 전후로 이 값을 비교해
+/// 방금 만든 창이 빈 껍데기인지 알아낸다.
+static UNSTICKS_FIRED: AtomicU64 = AtomicU64::new(0);
+
+pub fn unstick_count() -> u64 {
+    UNSTICKS_FIRED.load(Ordering::SeqCst)
+}
+
 static EPOCH: Lazy<Instant> = Lazy::new(Instant::now);
 
 fn now_ms() -> u64 {
@@ -313,6 +322,8 @@ fn unstick_main_thread() -> bool {
         log::error!("[WATCHDOG] main thread id unknown, cannot unstick");
         return false;
     }
+    // 메시지보다 먼저 올린다. 깨어난 메인 스레드가 이 값을 읽을 때는 이미 바뀌어 있어야 한다.
+    UNSTICKS_FIRED.fetch_add(1, Ordering::SeqCst);
     let sent = unsafe { PostThreadMessageW(tid, WM_QUIT, WPARAM(0), LPARAM(0)) };
     match sent {
         Ok(()) => true,
