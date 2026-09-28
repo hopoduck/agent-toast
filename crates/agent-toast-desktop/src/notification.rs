@@ -386,17 +386,17 @@ pub fn show_notification(
     crate::watchdog::mark(crate::watchdog::Step::Idle);
 }
 
-/// 토스트 창 생성을 메인 스레드로 보낸다. `retry` 는 웹뷰가 취소됐을 때 한 번 더
-/// 만들어 볼지 여부.
+/// 토스트 창 생성을 메인 스레드에 맡긴다. 이 함수는 메인 스레드 밖에서 부른다.
+/// `retry` 는 웹뷰가 취소되거나 실패했을 때 한 번 더 만들어 볼지 여부.
 ///
-/// 창 생성은 반드시 메인 스레드에서 한다. 워커 스레드에서 `build()` 를 부르면
-/// tao 에 메시지만 던지고 결과를 안 기다린 채 Ok 를 돌려주므로, 실제로는 아무
-/// 창도 안 생겼는데 성공 로그가 남는다. 메인 스레드에서 직접 부르면 로그가
-/// 사실과 맞고, 무엇보다 웹뷰 생성이 중첩 메시지 루프에 갇히는 구간이
-/// 메인 스레드 breadcrumb 으로 남아 워치독이 그 상태를 구분할 수 있다.
+/// `build()` 를 메인 스레드에서 부르는 이유:
+/// - 워커 스레드에서 부르면 생성 메시지만 던지고 결과를 안 기다린 채 Ok 를 준다.
+///   메인 스레드에서는 반환 시점에 생성이 끝나 있어 결과를 바로 확인할 수 있다.
+/// - 웹뷰 생성이 중첩 메시지 루프에 갇히는 구간이 메인 스레드 breadcrumb 으로
+///   남아, 워치독이 그 상태를 구분할 수 있다.
 ///
-/// 메인 스레드 밖에서만 부른다. 메인 스레드에서 부르면 큐를 거치지 않고 그 자리에서
-/// 실행된다(tauri-runtime-wry `send_user_message`).
+/// 이 함수 자체를 메인 스레드에서 부르면 `run_on_main_thread` 가 큐를 거치지 않고
+/// 그 자리에서 실행한다(tauri-runtime-wry `send_user_message`).
 fn dispatch_build(
     app: &AppHandle,
     state: &NotificationManagerState,
@@ -464,9 +464,21 @@ fn build_window(
         if let Ok(win) = &window {
             let _ = win.destroy();
         }
-        retry_canceled_build(app, state, &data.id, (x, y), retry);
+        retry_canceled_build(app, state, &data.id, (x, y), retry, "canceled by watchdog");
         crate::watchdog::mark(crate::watchdog::Step::Idle);
         return;
+    }
+
+    // 웹뷰 생성이 실패해도 build() 는 Ok 를 준다. tauri-runtime-wry 는 실패를
+    // 로그로만 남기고 창을 런타임에 등록하지 않을 뿐이라, 실제 창이 있는지는
+    // hwnd() 로만 알 수 있다. 메인 스레드라 생성은 이미 끝나 있다.
+    if let Ok(win) = &window {
+        if win.hwnd().is_err() {
+            let _ = win.destroy();
+            retry_canceled_build(app, state, &data.id, (x, y), retry, "failed");
+            crate::watchdog::mark(crate::watchdog::Step::Idle);
+            return;
+        }
     }
 
     match window {
@@ -519,33 +531,31 @@ fn build_window(
     crate::watchdog::mark(crate::watchdog::Step::Idle);
 }
 
-/// 워치독이 웹뷰 생성을 취소시킨 토스트를 한 번만 다시 만든다.
+/// 웹뷰가 취소되거나 생성에 실패한 토스트를 한 번만 다시 만든다. `cause` 는 로그용.
 ///
 /// 멈춰 있던 동안 사용자가 그 창이나 탭으로 돌아갔다면 포커스 복귀 자동 닫기가
 /// 항목을 이미 지웠으므로, 항목이 남아 있을 때만 다시 만든다. 창 라벨은 새 id 로
 /// 받는다. 방금 파기한 창의 라벨이 언제 풀리는지 보장이 없다. 다시 만들다 또
-/// 취소되면 포기한다. 연달아 걸리는 경우는 워치독이 재시작으로 처리한다.
+/// 실패하면 포기한다. 연달아 걸리는 경우는 워치독이 재시작으로 처리한다.
 fn retry_canceled_build(
     app: &AppHandle,
     state: &NotificationManagerState,
     id: &str,
     pos: (f64, f64),
     retry: bool,
+    cause: &str,
 ) {
     if !retry {
-        log::warn!("[NOTIFY] webview canceled by watchdog again, dropping: id={id}");
+        log::warn!("[NOTIFY] webview {cause} again, dropping: id={id}");
         rollback_pending(state, id);
         return;
     }
     let reassigned = state.lock().unwrap().reassign_id(id);
     let Some(data) = reassigned else {
-        log::warn!("[NOTIFY] webview canceled by watchdog, toast already closed: id={id}");
+        log::warn!("[NOTIFY] webview {cause}, toast already closed: id={id}");
         return;
     };
-    log::warn!(
-        "[NOTIFY] webview canceled by watchdog, retrying: id={id} -> {}",
-        data.id
-    );
+    log::warn!("[NOTIFY] webview {cause}, retrying: id={id} -> {}", data.id);
     // 멈춘 동안 쌓인 이벤트가 먼저 처리되도록 다른 스레드에서 큐 뒤에 넣는다.
     let (app, state) = (app.clone(), state.clone());
     std::thread::spawn(move || dispatch_build(&app, &state, data, pos, false));
