@@ -97,7 +97,7 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 | `updater.rs`      | Auto-update check via GitHub API (`CHECK_INTERVAL_MINUTES = 60`, i.e. hourly; 24h snooze), update notification with snooze/dedupe/sticky |
 | `changelog.rs`    | Extracts changelog from release body markers; `ReleaseInfo` payload sent to frontend                |
 | `fonts.rs`        | Enumerates installed system fonts via GDI `EnumFontFamiliesExW` for the toast font picker           |
-| `orca.rs`         | Orca integration: app PID and tab switching over the runtime's named pipe (`orca-runtime.json`), plus the on-screen tab read from its persisted state (`profiles/<active profile>/orca-data.json`) |
+| `orca.rs`         | Orca integration: app PID and tab switching over the runtime's named pipe (`orca-runtime.json`), plus the on-screen tab read from its persisted state (`profiles/<active profile>/profile-state.db`, or `orca-data.json` on older Orca) |
 | `watchdog.rs`     | Main-thread stall detection and recovery — heartbeat ACK, per-thread breadcrumbs, health file, `WM_QUIT` unstick, restart escalation |
 
 ### Critical Win32 Logic
@@ -108,7 +108,7 @@ src/                                # Vue 3 + TypeScript frontend (unchanged)
 - **FR-3**: auto-close on focus return via `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` + mpsc channel
 - **Window activation**: uses `SendInput` Alt-key simulation to bypass `SetForegroundWindow` restriction; restores minimized windows via `IsIconic` check
 - **Orca sessions bypass all of the above**: the shell's parent is a detached `orca-terminal-daemon.exe`, so the process tree reaches no window at all, and every session is a tab in one window titled `Orca`. When `ORCA_TERMINAL_HANDLE` is present (`orca.rs`), the window comes from the runtime's own app PID, and the tab drives the per-tab decisions: skip and auto-close only when Orca's recorded `activeTabId` equals this session's `ORCA_TAB_ID`, and switch to the session on click via `terminal.focus`
-- **The on-screen tab is not on the runtime pipe**: `terminal.resolveActive` reads like the method for it, but without a worktree argument it walks the tab map and returns the first entry no matter what the UI shows. The runtime reads the real value from its own store and exposes it only to plugins, and the RPC envelope permits exactly three frames (success, failure, keepalive), so nothing can be subscribed to either. `orca.rs` therefore reads `activeTabId` out of Orca's persisted state, re-parsing that file only when its mtime or length moves
+- **The on-screen tab is not on the runtime pipe**: `terminal.resolveActive` reads like the method for it, but without a worktree argument it walks the tab map and returns the first entry no matter what the UI shows. The runtime reads the real value from its own store and exposes it only to plugins, and the RPC envelope permits exactly three frames (success, failure, keepalive), so nothing can be subscribed to either. `orca.rs` therefore reads `activeTabId` out of Orca's persisted state, re-reading only when its mtime or length moves. Current Orca keeps that state in SQLite (`profile-state.db`, `workspaceSession` row of `profile_state_documents`) and leaves the pre-migration `orca-data.json` frozen on disk, so the database wins whenever it exists. It runs in WAL mode, so the change marker is the `-wal` file: commits never touch the main file's mtime
 
 ### Thread Model
 

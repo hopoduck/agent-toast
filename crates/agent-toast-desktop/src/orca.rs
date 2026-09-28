@@ -22,7 +22,10 @@
 //! own store and exposes it only to plugins, and the RPC envelope permits
 //! exactly three frames (success, failure, keepalive), so there is no event to
 //! subscribe to either. The active tab therefore comes from Orca's persisted
-//! state, `profiles/<active profile>/orca-data.json`.
+//! state under `profiles/<active profile>/`. Current Orca keeps it in SQLite,
+//! `profile-state.db`; older builds wrote `orca-data.json` instead, and the
+//! migration leaves that file behind frozen at its last value, so the database
+//! wins whenever it exists.
 //!
 //! Both are Orca internals rather than a published API, so every lookup here
 //! fails soft: a missing file, an unreachable pipe, an unexpected frame or a
@@ -30,7 +33,7 @@
 //! ordinary window-based behavior.
 
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
@@ -38,6 +41,10 @@ use std::time::{Duration, SystemTime};
 /// Ceiling for one runtime round trip. The runtime answers in single-digit
 /// milliseconds; this only exists so a wedged pipe cannot stall a notification.
 const RPC_TIMEOUT: Duration = Duration::from_millis(400);
+
+/// How long a read of Orca's state database waits on a lock. WAL readers do not
+/// block on writers, so this only covers Orca recovering the log at startup.
+const DB_BUSY_TIMEOUT: Duration = Duration::from_millis(200);
 
 static REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -185,9 +192,9 @@ struct ProfileIndex {
     active_profile_id: String,
 }
 
-/// The slice of `orca-data.json` this module cares about. Everything else in
-/// the file (repos, worktrees, terminal scrollback) is ignored, and unknown
-/// fields are dropped, so added keys cannot break the read.
+/// The slice of the legacy `orca-data.json` this module cares about.
+/// Everything else in the file (repos, worktrees, terminal scrollback) is
+/// ignored, and unknown fields are dropped, so added keys cannot break the read.
 #[derive(Debug, Clone, Deserialize)]
 struct AppData {
     #[serde(rename = "workspaceSession")]
@@ -209,6 +216,7 @@ fn parse_active_profile_id(text: &str) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
+/// Active tab out of the whole legacy `orca-data.json`.
 fn parse_active_tab_id(text: &str) -> Option<String> {
     serde_json::from_str::<AppData>(text)
         .ok()?
@@ -217,22 +225,104 @@ fn parse_active_tab_id(text: &str) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
-/// Path of the live profile's persisted state.
-fn data_file_path() -> Option<PathBuf> {
+/// Active tab out of the database's `workspaceSession` document, which holds
+/// the same object the legacy file nested under that key.
+fn parse_session_active_tab_id(text: &str) -> Option<String> {
+    serde_json::from_str::<WorkspaceSession>(text)
+        .ok()?
+        .active_tab_id
+        .filter(|id| !id.is_empty())
+}
+
+/// Where the live profile keeps its state.
+#[derive(Debug, Clone, PartialEq)]
+enum StateFile {
+    /// `profile-state.db`, one JSON document per domain.
+    Db(PathBuf),
+    /// `orca-data.json`, written by Orca builds from before the SQLite move.
+    Json(PathBuf),
+}
+
+impl StateFile {
+    /// The file whose mtime moves on every write. The database runs in WAL
+    /// mode, so commits land in `-wal` and the main file changes only on a
+    /// checkpoint. Its length is no signal either: after a checkpoint the log
+    /// is rewritten from the start at the same size. When Orca has shut down
+    /// and folded the log back in, there is no `-wal` and the main file is it.
+    fn change_marker(&self) -> PathBuf {
+        match self {
+            StateFile::Db(db) => {
+                let wal = wal_path(db);
+                if wal.exists() {
+                    wal
+                } else {
+                    db.clone()
+                }
+            }
+            StateFile::Json(json) => json.clone(),
+        }
+    }
+
+    fn read_active_tab_id(&self) -> Option<String> {
+        match self {
+            StateFile::Db(db) => read_db_active_tab_id(db),
+            // A read that lands mid-write parses to `None` and is cached as
+            // such; the completed write moves the mtime again, which retries it.
+            StateFile::Json(json) => std::fs::read_to_string(json)
+                .ok()
+                .and_then(|text| parse_active_tab_id(&text)),
+        }
+    }
+}
+
+fn wal_path(db: &Path) -> PathBuf {
+    let mut name = db.as_os_str().to_owned();
+    name.push("-wal");
+    PathBuf::from(name)
+}
+
+fn read_db_active_tab_id(db: &Path) -> Option<String> {
+    use rusqlite::{Connection, OpenFlags};
+    let conn = Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    conn.busy_timeout(DB_BUSY_TIMEOUT).ok()?;
+    let payload: String = conn
+        .query_row(
+            "SELECT payload FROM profile_state_documents WHERE domain = 'workspaceSession'",
+            [],
+            |row| row.get(0),
+        )
+        .ok()?;
+    parse_session_active_tab_id(&payload)
+}
+
+/// The live profile's persisted state. The database wins when it exists,
+/// because the JSON it was migrated from stays on disk and stops changing.
+fn state_file() -> Option<StateFile> {
     let base = dirs::config_dir()?.join("orca");
     let index = std::fs::read_to_string(base.join("orca-profile-index.json")).ok()?;
     let profile = parse_active_profile_id(&index)?;
-    Some(base.join("profiles").join(profile).join("orca-data.json"))
+    let dir = base.join("profiles").join(profile);
+    let db = dir.join("profile-state.db");
+    Some(if db.exists() {
+        StateFile::Db(db)
+    } else {
+        StateFile::Json(dir.join("orca-data.json"))
+    })
 }
 
-/// Last parse of `orca-data.json`, keyed by the file identity it came from.
+/// Last read of the active tab, keyed by the change marker it came from.
 ///
-/// The file runs to a megabyte and more, and the tab watcher asks several times
-/// a second, so it is re-read only once Orca has written to it again.
+/// The tab watcher asks several times a second, so the state is re-read only
+/// once Orca has written to it again.
 static ACTIVE_TAB_CACHE: Mutex<Option<CachedActiveTab>> = Mutex::new(None);
 
 #[derive(Debug)]
 struct CachedActiveTab {
+    marker: PathBuf,
     modified: SystemTime,
     len: u64,
     tab_id: Option<String>,
@@ -244,24 +334,22 @@ struct CachedActiveTab {
 /// It is also UI state that survives Orca losing focus, and therefore only
 /// means the user is reading that tab when the Orca window holds focus too.
 pub fn active_tab_id() -> Option<String> {
-    let path = data_file_path()?;
-    let meta = std::fs::metadata(&path).ok()?;
+    let state = state_file()?;
+    let marker = state.change_marker();
+    let meta = std::fs::metadata(&marker).ok()?;
     let modified = meta.modified().ok()?;
     let len = meta.len();
 
     let mut cache = ACTIVE_TAB_CACHE.lock().ok()?;
     if let Some(cached) = cache.as_ref() {
-        if cached.modified == modified && cached.len == len {
+        if cached.marker == marker && cached.modified == modified && cached.len == len {
             return cached.tab_id.clone();
         }
     }
 
-    // A read that lands mid-write parses to `None` and is cached as such; the
-    // completed write moves the mtime again, which retries it.
-    let tab_id = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| parse_active_tab_id(&text));
+    let tab_id = state.read_active_tab_id();
     *cache = Some(CachedActiveTab {
+        marker,
         modified,
         len,
         tab_id: tab_id.clone(),
@@ -416,5 +504,79 @@ mod tests {
         assert!(parse_active_tab_id("{}").is_none());
         // A read that lands mid-write sees truncated JSON.
         assert!(parse_active_tab_id(r#"{"workspaceSession":{"activeTa"#).is_none());
+    }
+
+    #[test]
+    fn reads_the_active_tab_from_a_session_document() {
+        let doc = r#"{ "activeRepoId": "r1", "activeTabId": "tab-9", "tabsByWorktree": {} }"#;
+        assert_eq!(parse_session_active_tab_id(doc).as_deref(), Some("tab-9"));
+        assert!(parse_session_active_tab_id(r#"{"activeTabId":""}"#).is_none());
+        assert!(parse_session_active_tab_id("{}").is_none());
+    }
+
+    #[test]
+    fn wal_file_sits_next_to_the_database() {
+        let db = Path::new(r"C:\x\profiles\p\profile-state.db");
+        assert_eq!(
+            wal_path(db),
+            PathBuf::from(r"C:\x\profiles\p\profile-state.db-wal")
+        );
+    }
+
+    /// Mirrors Orca's live setup: a writer holding the database open in WAL
+    /// mode, so commits sit in `-wal` while the reader opens read-only.
+    #[test]
+    fn reads_uncheckpointed_commits_from_the_database() {
+        let dir = std::env::temp_dir().join(format!("agent-toast-orca-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("profile-state.db");
+
+        let writer = rusqlite::Connection::open(&db).unwrap();
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 PRAGMA wal_autocheckpoint = 0;
+                 CREATE TABLE profile_state_documents (
+                   domain TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL
+                 );
+                 INSERT INTO profile_state_documents VALUES
+                   ('ui', '{}'),
+                   ('workspaceSession', '{\"activeTabId\":\"tab-1\"}');",
+            )
+            .unwrap();
+        assert!(wal_path(&db).exists());
+        assert_eq!(read_db_active_tab_id(&db).as_deref(), Some("tab-1"));
+
+        writer
+            .execute(
+                "UPDATE profile_state_documents SET payload = ?1 WHERE domain = 'workspaceSession'",
+                [r#"{"activeTabId":"tab-2"}"#],
+            )
+            .unwrap();
+        assert_eq!(read_db_active_tab_id(&db).as_deref(), Some("tab-2"));
+
+        drop(writer);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_database_or_document_yields_none() {
+        let dir = std::env::temp_dir().join(format!("agent-toast-orca-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("profile-state.db");
+        assert!(read_db_active_tab_id(&db).is_none());
+
+        let writer = rusqlite::Connection::open(&db).unwrap();
+        writer
+            .execute_batch(
+                "CREATE TABLE profile_state_documents (
+                   domain TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL
+                 );",
+            )
+            .unwrap();
+        assert!(read_db_active_tab_id(&db).is_none());
+
+        drop(writer);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
