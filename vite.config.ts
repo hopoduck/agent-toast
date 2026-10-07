@@ -32,8 +32,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `crates/agent-toast-desktop`
-      ignored: ["**/crates/agent-toast-desktop/**"],
+      // 3. tell Vite to ignore watching the Rust crates and the workspace `target`
+      ignored: ["**/crates/**", "**/target/**"],
     },
   },
 }));
