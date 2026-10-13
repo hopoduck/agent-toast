@@ -7,7 +7,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { Star } from "lucide-vue-next";
+import { computed, h, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast } from "vue-sonner";
 import confetti from "canvas-confetti";
@@ -164,7 +165,9 @@ function onStarClick(e: MouseEvent) {
     shapes: ["star", "circle"],
   });
 
-  toast.success(t("about.star_thanks"));
+  toast.success(t("about.star_thanks"), {
+    icon: h(Star, { class: "size-4 fill-amber-400 text-amber-400" }),
+  });
 
   openUrl("https://github.com/hopoduck/agent-toast");
 }

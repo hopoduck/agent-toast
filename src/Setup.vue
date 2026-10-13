@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ChevronDown, Moon, RotateCcw, Sun, X } from "lucide-vue-next";
+import { Check, ChevronDown, Moon, RotateCcw, Sun, X } from "lucide-vue-next";
 import { onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast, Toaster } from "vue-sonner";
@@ -155,6 +155,9 @@ const exePath = ref("");
 const savedExePath = ref<string | null>(null);
 const exePathMismatch = ref(false);
 const isSaving = ref(false);
+// 저장 성공은 토스트 대신 버튼이 잠깐 "저장됨" 으로 바뀌어 알린다
+const justSaved = ref(false);
+let justSavedTimer: ReturnType<typeof setTimeout> | undefined;
 const codexRestartNeeded = ref(false);
 const isDevMode = ref(false);
 
@@ -219,7 +222,9 @@ async function onSave() {
     const result = await invoke<SaveResult>("save_hook_config", {
       config: config.value,
     });
-    toast.success(t("setup.save_success"));
+    justSaved.value = true;
+    clearTimeout(justSavedTimer);
+    justSavedTimer = setTimeout(() => (justSaved.value = false), 2000);
     if (result.codex_hooks_path) codexRestartNeeded.value = true;
     configSaved.value = true;
     exePathMismatch.value = false;
@@ -511,7 +516,8 @@ async function onClose() {
           {{ t("setup.close") }}
         </Button>
         <Button @click="onSave" :disabled="isSaving">
-          {{ isSaving ? t("setup.saving") : t("setup.save") }}
+          <template v-if="justSaved"><Check />{{ t("setup.saved") }}</template>
+          <template v-else>{{ isSaving ? t("setup.saving") : t("setup.save") }}</template>
         </Button>
       </div>
     </div>
@@ -519,7 +525,7 @@ async function onClose() {
       position="top-center"
       :duration="3000"
       rich-colors
-      class="opacity-80 drop-shadow-sm"
+      class="drop-shadow-sm"
     />
   </div>
 </template>
