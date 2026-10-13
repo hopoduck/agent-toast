@@ -41,7 +41,13 @@ pub struct Cli {
     #[arg(long)]
     pub setup: bool,
 
-    /// Codex mode: receive JSON from Codex CLI notify hook
+    /// Agent that invoked the hook: "claude" (default) or "codex". Codex hooks
+    /// take the project folder from the stdin JSON's `cwd` and must answer with
+    /// JSON on stdout.
+    #[arg(long, default_value = "claude")]
+    pub source: String,
+
+    /// Legacy Codex mode: receive JSON from Codex CLI `notify` config
     #[arg(long)]
     pub codex: bool,
 
@@ -213,6 +219,30 @@ mod tests {
     fn cli_parse_dynamic_flag() {
         let cli =
             Cli::try_parse_from(["agent-toast", "--event", "task_complete", "--dynamic"]).unwrap();
+        assert!(cli.dynamic);
+    }
+
+    #[test]
+    fn cli_source_defaults_claude() {
+        let cli = Cli::try_parse_from(["agent-toast", "--event", "task_complete"]).unwrap();
+        assert_eq!(cli.source, "claude");
+    }
+
+    #[test]
+    fn cli_parse_codex_hook_command() {
+        let cli = Cli::try_parse_from([
+            "agent-toast",
+            "--source",
+            "codex",
+            "--event",
+            "user_input_required",
+            "--message",
+            "답변이 필요합니다",
+            "--dynamic",
+        ])
+        .unwrap();
+        assert_eq!(cli.source, "codex");
+        assert!(!cli.codex);
         assert!(cli.dynamic);
     }
 

@@ -1,12 +1,16 @@
-//! Dynamic notification message extraction from Claude Code hook stdin JSON.
+//! Dynamic notification message extraction from Claude Code / Codex hook stdin JSON.
 //!
 //! When a hook command carries `--dynamic`, the desktop CLI reads the hook's
 //! stdin JSON and derives the toast body from it, in priority order:
 //!   1. the tool action description (`tool_input.description`) — present on
 //!      permission-style hooks for tools that carry one (e.g. Bash),
-//!   2. the assistant's final message (`last_assistant_message`) — delivered
+//!   2. the question text (`tool_input.questions[].question`) — Claude's
+//!      `AskUserQuestion` (via PermissionRequest) and Codex's
+//!      `request_user_input` (via PreToolUse) both carry it; Codex's
+//!      `request_user_input_async` uses `questions[].title` instead,
+//!   3. the assistant's final message (`last_assistant_message`) — delivered
 //!      directly on stdin for Stop and similar turn-end hooks,
-//!   3. otherwise the caller falls back to the static `--message`.
+//!   4. otherwise the caller falls back to the static `--message`.
 //!
 //! `last_assistant_message` is the just-finished turn (no transcript-flush
 //! timing lag), so we never need to read `transcript_path`. These functions are
@@ -48,6 +52,30 @@ pub fn extract_tool_description(hook: &Value) -> Option<String> {
     }
 }
 
+/// Extract the question text from a question tool's `tool_input.questions`.
+/// Several questions in one call are joined line by line so none is dropped.
+pub fn extract_questions(hook: &Value) -> Option<String> {
+    let questions: Vec<&str> = hook
+        .get("tool_input")
+        .and_then(|ti| ti.get("questions"))
+        .and_then(|q| q.as_array())?
+        .iter()
+        .filter_map(|q| {
+            ["question", "title"].into_iter().find_map(|field| {
+                q.get(field)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+            })
+        })
+        .collect();
+    if questions.is_empty() {
+        None
+    } else {
+        Some(questions.join("\n"))
+    }
+}
+
 /// Extract the assistant's final message, delivered directly on the hook's
 /// stdin JSON as `last_assistant_message` (present on Stop and similar turn-end
 /// hooks). This is the just-finished turn — unlike reading `transcript_path`,
@@ -65,15 +93,33 @@ pub fn extract_last_assistant_message(hook: &Value) -> Option<String> {
 }
 
 /// Resolve the dynamic notification body from a parsed hook payload, in
-/// priority order: tool action description → assistant's last message →
-/// static `fallback`. The dynamic candidates are truncated to
+/// priority order: tool action description → question text → assistant's last
+/// message → static `fallback`. The dynamic candidates are truncated to
 /// [`MAX_MESSAGE_CHARS`]; the fallback is passed through as-is (it's the user's
 /// own short fixed text).
 pub fn resolve_message(hook: &Value, fallback: Option<&str>) -> Option<String> {
     extract_tool_description(hook)
+        .or_else(|| extract_questions(hook))
         .or_else(|| extract_last_assistant_message(hook))
         .map(|s| truncate_chars(&s, MAX_MESSAGE_CHARS))
         .or_else(|| fallback.map(str::to_string))
+}
+
+/// Read the hook event JSON from stdin. `None` when stdin is a terminal, empty,
+/// unreadable, or not JSON.
+pub fn read_stdin_json() -> Option<Value> {
+    use std::io::{IsTerminal, Read};
+    // Manual terminal invocation: no hook JSON will ever arrive on stdin, and
+    // read_to_string would block forever waiting for EOF — bail out
+    // immediately. Hook invocations pipe stdin, so they skip this.
+    if std::io::stdin().is_terminal() {
+        return None;
+    }
+    let mut buf = String::new();
+    if std::io::stdin().read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str(&buf).ok()
 }
 
 /// Read the hook event JSON from stdin and [`resolve_message`] it. Shared by the
@@ -81,20 +127,9 @@ pub fn resolve_message(hook: &Value, fallback: Option<&str>) -> Option<String> {
 /// Any failure (no stdin, empty, bad JSON, no usable field) falls back to
 /// `fallback` so the toast is never empty.
 pub fn resolve_from_stdin(fallback: Option<&str>) -> Option<String> {
-    use std::io::{IsTerminal, Read};
-    // Manual terminal invocation: no hook JSON will ever arrive on stdin, and
-    // read_to_string would block forever waiting for EOF — bail out to the
-    // fallback immediately. Hook invocations pipe stdin, so they skip this.
-    if std::io::stdin().is_terminal() {
-        return fallback.map(str::to_string);
-    }
-    let mut buf = String::new();
-    if std::io::stdin().read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
-        return fallback.map(str::to_string);
-    }
-    match serde_json::from_str::<Value>(&buf) {
-        Ok(hook) => resolve_message(&hook, fallback),
-        Err(_) => fallback.map(str::to_string),
+    match read_stdin_json() {
+        Some(hook) => resolve_message(&hook, fallback),
+        None => fallback.map(str::to_string),
     }
 }
 
@@ -199,6 +234,67 @@ mod tests {
     fn resolve_falls_back_to_static() {
         let hook = json!({ "hook_event_name": "Stop" });
         assert_eq!(resolve_message(&hook, Some("fixed")), Some("fixed".into()));
+    }
+
+    #[test]
+    fn questions_extracted_from_codex_request_user_input() {
+        let hook = json!({
+            "hook_event_name": "PreToolUse",
+            "tool_name": "request_user_input",
+            "tool_input": { "questions": [{
+                "id": "continue_test",
+                "header": "훅 필터 테스트",
+                "question": "계속할까요?",
+                "options": [{ "label": "계속" }, { "label": "중단" }]
+            }]}
+        });
+        assert_eq!(extract_questions(&hook), Some("계속할까요?".into()));
+    }
+
+    #[test]
+    fn resolve_uses_async_question_titles() {
+        let hook = json!({
+            "hook_event_name": "PreToolUse",
+            "tool_name": "request_user_input_async",
+            "tool_input": { "questions": [
+                { "title": "  어느 것을 선택할까요?  ", "options": ["A", "B"] },
+                { "title": " " },
+                { "title": "추가 조건이 있나요?" }
+            ]}
+        });
+        assert_eq!(
+            resolve_message(&hook, Some("질문")),
+            Some("어느 것을 선택할까요?\n추가 조건이 있나요?".into())
+        );
+    }
+
+    #[test]
+    fn questions_joined_line_by_line() {
+        let hook = json!({ "tool_input": { "questions": [
+            { "question": "First?" },
+            { "question": "  " },
+            { "question": "Second?" }
+        ]}});
+        assert_eq!(extract_questions(&hook), Some("First?\nSecond?".into()));
+    }
+
+    #[test]
+    fn questions_none_when_absent_or_empty() {
+        assert_eq!(extract_questions(&json!({ "tool_input": {} })), None);
+        let hook = json!({ "tool_input": { "questions": [{ "question": "" }] } });
+        assert_eq!(extract_questions(&hook), None);
+    }
+
+    #[test]
+    fn resolve_uses_question_before_last_message() {
+        let hook = json!({
+            "tool_input": { "questions": [{ "question": "Apply now?" }] },
+            "last_assistant_message": "some reply"
+        });
+        assert_eq!(
+            resolve_message(&hook, Some("fixed")),
+            Some("Apply now?".into())
+        );
     }
 
     #[test]

@@ -43,6 +43,20 @@ pub struct HookConfig {
     pub pre_compact_message: String,
     pub notification_idle_enabled: bool,
     pub notification_idle_message: String,
+    // Codex 전용
+    /// 질문(request_user_input) 알림. Claude 질문은 권한 요청 훅으로 들어온다.
+    #[serde(default = "default_true")]
+    pub question_enabled: bool,
+    #[serde(default = "default_question_message")]
+    pub question_message: String,
+    #[serde(default)]
+    pub post_compact_enabled: bool,
+    #[serde(default = "default_post_compact_message")]
+    pub post_compact_message: String,
+    #[serde(default)]
+    pub interrupt_enabled: bool,
+    #[serde(default = "default_interrupt_message")]
+    pub interrupt_message: String,
     /// "project" = title_hint(실행 폴더명) 우선, "window" = 윈도우 제목 그대로
     #[serde(default = "default_title_display_mode")]
     pub title_display_mode: String,
@@ -70,7 +84,10 @@ pub struct HookConfig {
     /// 세션 시작 시 앱 자동 실행 여부 (--daemon 훅)
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
-    /// Codex notify 훅 활성화 여부
+    /// Claude Code 에 훅 등록 여부 (`~/.claude/settings.json`)
+    #[serde(default = "default_true")]
+    pub claude_enabled: bool,
+    /// Codex 에 훅 등록 여부 (`~/.codex/hooks.json`)
     #[serde(default)]
     pub codex_enabled: bool,
     /// 설정을 저장한 앱 버전 (마이그레이션 판단용)
@@ -182,6 +199,52 @@ fn default_toast_density() -> String {
 
 fn default_locale() -> String {
     detect_system_locale()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn localized(ko: &str, en: &str) -> String {
+    if detect_system_locale() == "ko" {
+        ko
+    } else {
+        en
+    }
+    .into()
+}
+
+fn default_question_message() -> String {
+    localized("답변이 필요합니다", "Your answer is needed")
+}
+
+fn default_post_compact_message() -> String {
+    localized("컨텍스트 압축이 끝났습니다", "Context compaction finished")
+}
+
+fn default_interrupt_message() -> String {
+    localized("진행 중인 응답이 중단되었습니다", "Response interrupted")
+}
+
+/// Whether an agent's home folder (`~/.claude`, `~/.codex`) exists, i.e. the
+/// agent has been run on this machine.
+fn agent_home_exists(dir: &str) -> bool {
+    dirs::home_dir().is_some_and(|home| home.join(dir).is_dir())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentPresence {
+    pub claude: bool,
+    pub codex: bool,
+}
+
+/// 설치 흔적이 있는 에이전트. 훅 탭이 "설치되지 않음" 표시에 쓴다.
+#[tauri::command]
+pub fn get_agent_presence() -> AgentPresence {
+    AgentPresence {
+        claude: agent_home_exists(".claude"),
+        codex: agent_home_exists(".codex"),
+    }
 }
 
 /// 시스템 UI 언어를 감지하여 지원하는 로케일 코드 반환
@@ -320,6 +383,13 @@ impl Default for HookConfig {
                 "Waiting for input"
             }
             .into(),
+            // Codex 전용
+            question_enabled: true,
+            question_message: default_question_message(),
+            post_compact_enabled: false,
+            post_compact_message: default_post_compact_message(),
+            interrupt_enabled: false,
+            interrupt_message: default_interrupt_message(),
             // 설정
             title_display_mode: "project".into(),
             auto_close_on_focus: true,
@@ -333,7 +403,9 @@ impl Default for HookConfig {
             notification_monitor: "primary".into(),
             locale,
             auto_start: true,
-            codex_enabled: false,
+            // 첫 실행: 설치된 에이전트를 켠다. 둘 다 흔적이 없으면 Claude 만.
+            claude_enabled: agent_home_exists(".claude") || !agent_home_exists(".codex"),
+            codex_enabled: agent_home_exists(".codex"),
             version: String::new(),
             theme: default_theme(),
             dynamic_message_enabled: default_dynamic_message_enabled(),
@@ -346,6 +418,176 @@ impl Default for HookConfig {
             toast_font_mono: String::new(),
         }
     }
+}
+
+/// Where one agent registers a notification row: hook event and optional matcher.
+type HookTarget = Option<(&'static str, Option<&'static str>)>;
+
+/// One notification row of the hooks tab. The row's switch and message are
+/// shared; each agent that supports it gets its own hook.
+struct EventSpec {
+    /// `HookConfig` field prefix (`<key>_enabled`, `<key>_message`)
+    key: &'static str,
+    /// `--event` value, which picks the toast's color
+    cli_event: &'static str,
+    claude: HookTarget,
+    codex: HookTarget,
+}
+
+/// Claude's `AskUserQuestion` arrives as a PermissionRequest, so `question`
+/// only needs a Codex hook. Codex has no Notification event, so those rows stay
+/// Claude-only.
+const EVENT_SPECS: &[EventSpec] = &[
+    EventSpec {
+        key: "session_start",
+        cli_event: "session_start",
+        claude: Some(("SessionStart", None)),
+        codex: Some(("SessionStart", None)),
+    },
+    EventSpec {
+        key: "stop",
+        cli_event: "task_complete",
+        claude: Some(("Stop", None)),
+        codex: Some(("Stop", None)),
+    },
+    EventSpec {
+        key: "notification_permission",
+        cli_event: "user_input_required",
+        claude: Some(("Notification", Some("permission_prompt"))),
+        codex: None,
+    },
+    EventSpec {
+        key: "notification_elicitation",
+        cli_event: "user_input_required",
+        claude: Some(("Notification", Some("elicitation_dialog"))),
+        codex: None,
+    },
+    EventSpec {
+        key: "notification_idle",
+        cli_event: "user_input_required",
+        claude: Some(("Notification", Some("idle_prompt"))),
+        codex: None,
+    },
+    EventSpec {
+        key: "session_end",
+        cli_event: "task_complete",
+        claude: Some(("SessionEnd", None)),
+        codex: Some(("SessionEnd", None)),
+    },
+    EventSpec {
+        key: "subagent_stop",
+        cli_event: "task_complete",
+        claude: Some(("SubagentStop", None)),
+        codex: Some(("SubagentStop", None)),
+    },
+    EventSpec {
+        key: "pre_compact",
+        cli_event: "task_complete",
+        claude: Some(("PreCompact", None)),
+        codex: Some(("PreCompact", None)),
+    },
+    EventSpec {
+        key: "setup",
+        cli_event: "task_complete",
+        claude: Some(("Setup", None)),
+        codex: None,
+    },
+    EventSpec {
+        key: "user_prompt_submit",
+        cli_event: "task_complete",
+        claude: Some(("UserPromptSubmit", None)),
+        codex: Some(("UserPromptSubmit", None)),
+    },
+    EventSpec {
+        key: "pre_tool_use",
+        cli_event: "task_complete",
+        claude: Some(("PreToolUse", None)),
+        codex: Some(("PreToolUse", None)),
+    },
+    EventSpec {
+        key: "post_tool_use",
+        cli_event: "task_complete",
+        claude: Some(("PostToolUse", None)),
+        codex: Some(("PostToolUse", None)),
+    },
+    EventSpec {
+        key: "post_tool_use_failure",
+        cli_event: "error",
+        claude: Some(("PostToolUseFailure", None)),
+        codex: None,
+    },
+    EventSpec {
+        key: "permission_request",
+        cli_event: "user_input_required",
+        claude: Some(("PermissionRequest", None)),
+        codex: Some(("PermissionRequest", None)),
+    },
+    EventSpec {
+        key: "subagent_start",
+        cli_event: "task_complete",
+        claude: Some(("SubagentStart", None)),
+        codex: Some(("SubagentStart", None)),
+    },
+    EventSpec {
+        key: "question",
+        cli_event: "user_input_required",
+        claude: None,
+        codex: Some(("PreToolUse", Some("^request_user_input(_async)?$"))),
+    },
+    EventSpec {
+        key: "post_compact",
+        cli_event: "task_complete",
+        claude: None,
+        codex: Some(("PostCompact", None)),
+    },
+    EventSpec {
+        key: "interrupt",
+        cli_event: "task_complete",
+        claude: None,
+        codex: Some(("Interrupt", None)),
+    },
+];
+
+/// Field access by [`EventSpec::key`].
+macro_rules! hook_event_fields {
+    ($($key:literal => $enabled:ident, $message:ident;)*) => {
+        impl HookConfig {
+            fn event(&self, key: &str) -> Option<(bool, &str)> {
+                match key {
+                    $($key => Some((self.$enabled, self.$message.as_str())),)*
+                    _ => None,
+                }
+            }
+
+            fn event_mut(&mut self, key: &str) -> Option<(&mut bool, &mut String)> {
+                match key {
+                    $($key => Some((&mut self.$enabled, &mut self.$message)),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+hook_event_fields! {
+    "session_start" => session_start_enabled, session_start_message;
+    "stop" => stop_enabled, stop_message;
+    "notification_permission" => notification_permission_enabled, notification_permission_message;
+    "notification_elicitation" => notification_elicitation_enabled, notification_elicitation_message;
+    "notification_idle" => notification_idle_enabled, notification_idle_message;
+    "session_end" => session_end_enabled, session_end_message;
+    "subagent_stop" => subagent_stop_enabled, subagent_stop_message;
+    "pre_compact" => pre_compact_enabled, pre_compact_message;
+    "setup" => setup_enabled, setup_message;
+    "user_prompt_submit" => user_prompt_submit_enabled, user_prompt_submit_message;
+    "pre_tool_use" => pre_tool_use_enabled, pre_tool_use_message;
+    "post_tool_use" => post_tool_use_enabled, post_tool_use_message;
+    "post_tool_use_failure" => post_tool_use_failure_enabled, post_tool_use_failure_message;
+    "permission_request" => permission_request_enabled, permission_request_message;
+    "subagent_start" => subagent_start_enabled, subagent_start_message;
+    "question" => question_enabled, question_message;
+    "post_compact" => post_compact_enabled, post_compact_message;
+    "interrupt" => interrupt_enabled, interrupt_message;
 }
 
 fn settings_path() -> PathBuf {
@@ -478,6 +720,9 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
             .unwrap_or("ko")
             .to_string(),
         auto_start: root["agent_toast"]["auto_start"].as_bool().unwrap_or(true),
+        claude_enabled: root["agent_toast"]["claude_enabled"]
+            .as_bool()
+            .unwrap_or(true),
         codex_enabled: root["agent_toast"]["codex_enabled"]
             .as_bool()
             .unwrap_or(false),
@@ -713,7 +958,50 @@ fn parse_hook_config_from_json(content: &str) -> HookConfig {
         }
     }
 
+    apply_saved_events(&mut config, &root["agent_toast"]["events"]);
+
     config
+}
+
+/// Restore event rows from the `agent_toast.events` snapshot. Registered Claude
+/// hooks stay the source of truth for the rows they carry (so hand edits to
+/// settings.json still show up); the snapshot fills in the rest: Codex-only
+/// rows, and every row while Claude's hooks are unregistered.
+fn apply_saved_events(config: &mut HookConfig, events: &Value) {
+    let Some(events) = events.as_object() else {
+        return;
+    };
+    let claude_enabled = config.claude_enabled;
+    for spec in EVENT_SPECS {
+        if claude_enabled && spec.claude.is_some() {
+            continue;
+        }
+        let (Some(saved), Some((enabled, message))) =
+            (events.get(spec.key), config.event_mut(spec.key))
+        else {
+            continue;
+        };
+        if let Some(b) = saved["enabled"].as_bool() {
+            *enabled = b;
+        }
+        if let Some(m) = saved["message"].as_str() {
+            *message = m.to_string();
+        }
+    }
+}
+
+/// Every event row as `{ key: { enabled, message } }`, for `agent_toast.events`.
+fn saved_events(config: &HookConfig) -> Value {
+    let mut events = serde_json::Map::new();
+    for spec in EVENT_SPECS {
+        if let Some((enabled, message)) = config.event(spec.key) {
+            events.insert(
+                spec.key.into(),
+                serde_json::json!({ "enabled": enabled, "message": message }),
+            );
+        }
+    }
+    Value::Object(events)
 }
 
 /// Check if settings.json contains any agent-toast hooks
@@ -800,7 +1088,9 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     );
     cn.insert("locale".into(), Value::String(config.locale.clone()));
     cn.insert("auto_start".into(), Value::Bool(config.auto_start));
+    cn.insert("claude_enabled".into(), Value::Bool(config.claude_enabled));
     cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
+    cn.insert("events".into(), saved_events(config));
     cn.insert("http_enabled".into(), Value::Bool(config.http_enabled));
     cn.insert("http_port".into(), Value::Number(config.http_port.into()));
     cn.insert("show_hostname".into(), Value::Bool(config.show_hostname));
@@ -943,7 +1233,7 @@ pub fn save_hook_config(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::notification::NotificationManagerState>,
     config: HookConfig,
-) -> Result<String, String> {
+) -> Result<SaveResult, String> {
     let path = settings_path();
 
     // Read existing settings or create new object
@@ -955,191 +1245,16 @@ pub fn save_hook_config(
 
     let exe = exe_path_for_shell();
 
-    // Build agent-toast hook entries.
-    let mut entries: Vec<HookEntry> = Vec::new();
+    // Codex 먼저: hooks.json 이 깨져 있으면 아무것도 쓰지 않고 실패한다.
+    let codex_hooks_changed = save_codex_hooks(&config, &exe)?;
 
-    // SessionStart: add --daemon entry if auto_start is enabled
-    if config.auto_start {
-        entries.push(HookEntry {
-            event_key: "SessionStart",
-            matcher: None,
-            command: format!("{} --daemon", exe),
-        });
-    }
-    // SessionStart: add notification entry if enabled
-    if config.session_start_enabled {
-        entries.push(HookEntry {
-            event_key: "SessionStart",
-            matcher: None,
-            command: format!(
-                "{} --event session_start --message \"{}\"",
-                exe, config.session_start_message
-            ),
-        });
-    }
-
-    // CLI reads CLAUDE_PROJECT_DIR env var directly as title hint fallback,
-    // so no --title arg needed in the hook command.
-
-    if config.stop_enabled {
-        entries.push(HookEntry {
-            event_key: "Stop",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.stop_message
-            ),
-        });
-    }
-
-    if config.notification_permission_enabled {
-        entries.push(HookEntry {
-            event_key: "Notification",
-            matcher: Some("permission_prompt"),
-            command: format!(
-                "{} --event user_input_required --message \"{}\"",
-                exe, config.notification_permission_message
-            ),
-        });
-    }
-
-    if config.notification_elicitation_enabled {
-        entries.push(HookEntry {
-            event_key: "Notification",
-            matcher: Some("elicitation_dialog"),
-            command: format!(
-                "{} --event user_input_required --message \"{}\"",
-                exe, config.notification_elicitation_message
-            ),
-        });
-    }
-
-    if config.notification_idle_enabled {
-        entries.push(HookEntry {
-            event_key: "Notification",
-            matcher: Some("idle_prompt"),
-            command: format!(
-                "{} --event user_input_required --message \"{}\"",
-                exe, config.notification_idle_message
-            ),
-        });
-    }
-
-    if config.session_end_enabled {
-        entries.push(HookEntry {
-            event_key: "SessionEnd",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.session_end_message
-            ),
-        });
-    }
-
-    if config.subagent_stop_enabled {
-        entries.push(HookEntry {
-            event_key: "SubagentStop",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.subagent_stop_message
-            ),
-        });
-    }
-
-    if config.pre_compact_enabled {
-        entries.push(HookEntry {
-            event_key: "PreCompact",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.pre_compact_message
-            ),
-        });
-    }
-
-    if config.setup_enabled {
-        entries.push(HookEntry {
-            event_key: "Setup",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.setup_message
-            ),
-        });
-    }
-
-    if config.user_prompt_submit_enabled {
-        entries.push(HookEntry {
-            event_key: "UserPromptSubmit",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.user_prompt_submit_message
-            ),
-        });
-    }
-
-    if config.pre_tool_use_enabled {
-        entries.push(HookEntry {
-            event_key: "PreToolUse",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.pre_tool_use_message
-            ),
-        });
-    }
-
-    if config.post_tool_use_enabled {
-        entries.push(HookEntry {
-            event_key: "PostToolUse",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.post_tool_use_message
-            ),
-        });
-    }
-
-    if config.post_tool_use_failure_enabled {
-        entries.push(HookEntry {
-            event_key: "PostToolUseFailure",
-            matcher: None,
-            command: format!(
-                "{} --event error --message \"{}\"",
-                exe, config.post_tool_use_failure_message
-            ),
-        });
-    }
-
-    if config.permission_request_enabled {
-        entries.push(HookEntry {
-            event_key: "PermissionRequest",
-            matcher: None,
-            command: format!(
-                "{} --event user_input_required --message \"{}\"",
-                exe, config.permission_request_message
-            ),
-        });
-    }
-
-    if config.subagent_start_enabled {
-        entries.push(HookEntry {
-            event_key: "SubagentStart",
-            matcher: None,
-            command: format!(
-                "{} --event task_complete --message \"{}\"",
-                exe, config.subagent_start_message
-            ),
-        });
-    }
-
-    // When dynamic mode is on, every notification command derives its body from
-    // the hook's stdin JSON (the infrastructure `--daemon` entry stays untouched).
-    apply_dynamic_flag(&mut entries, config.dynamic_message_enabled);
-
-    // Merge entries into root, preserving non-agent-toast hooks.
+    // Merge entries into root, preserving non-agent-toast hooks. A disabled
+    // Claude keeps no agent-toast hooks at all.
+    let entries = if config.claude_enabled {
+        build_hook_entries(&config, &exe, Agent::Claude)
+    } else {
+        Vec::new()
+    };
     root = merge_agent_toast_hooks(root, &entries);
 
     write_agent_toast_settings(&mut root, &config);
@@ -1158,9 +1273,6 @@ pub fn save_hook_config(
         config.notification_sound_file.as_deref().map(Path::new),
     );
 
-    // Codex config.toml 업데이트
-    save_codex_config(config.codex_enabled).map_err(|e| e.to_string())?;
-
     // HTTP 서버 상태를 새 설정과 동기화 (즉시 시작/중지/재시작)
     crate::sync_http_server(&app).map_err(|e| format!("HTTP 서버 시작 실패: {e}"))?;
 
@@ -1170,12 +1282,78 @@ pub fn save_hook_config(
     // 트레이 메뉴 텍스트를 현재 locale에 맞게 갱신
     crate::update_tray_locale(&app);
 
-    let mut result = path.to_string_lossy().to_string();
-    if config.codex_enabled {
-        result.push('\n');
-        result.push_str(&codex_config_path().to_string_lossy());
+    Ok(SaveResult {
+        codex_hooks_path: (config.codex_enabled && codex_hooks_changed)
+            .then(|| codex_hooks_path().to_string_lossy().to_string()),
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SaveResult {
+    /// Set when this save registered or changed Codex hooks: Codex runs them
+    /// only after the user trusts them again in its `/hooks` screen.
+    pub codex_hooks_path: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Agent {
+    Claude,
+    Codex,
+}
+
+/// The agent-toast hook commands one agent should carry for `config`: the
+/// optional `--daemon` launcher plus one entry per enabled row that agent
+/// supports.
+fn build_hook_entries(config: &HookConfig, exe: &str, agent: Agent) -> Vec<HookEntry> {
+    // Codex's Windows session shell is PowerShell: a quoted executable path
+    // needs the call operator, otherwise arguments such as --source fail to parse.
+    let exe = if cfg!(windows) && matches!(agent, Agent::Codex) {
+        format!("& {exe}")
+    } else {
+        exe.to_string()
+    };
+    // Codex hooks name their source so the CLI reads `cwd` from stdin and
+    // answers with JSON; Claude commands stay as they always were.
+    let source = match agent {
+        Agent::Claude => "",
+        Agent::Codex => " --source codex",
+    };
+    let mut entries: Vec<HookEntry> = Vec::new();
+
+    if config.auto_start {
+        entries.push(HookEntry {
+            event_key: "SessionStart",
+            matcher: None,
+            command: format!("{exe} --daemon{source}"),
+        });
     }
-    Ok(result)
+
+    for spec in EVENT_SPECS {
+        let target = match agent {
+            Agent::Claude => spec.claude,
+            Agent::Codex => spec.codex,
+        };
+        let Some((event_key, matcher)) = target else {
+            continue;
+        };
+        let Some((true, message)) = config.event(spec.key) else {
+            continue;
+        };
+        entries.push(HookEntry {
+            event_key,
+            matcher,
+            command: format!(
+                "{exe}{source} --event {} --message \"{message}\"",
+                spec.cli_event
+            ),
+        });
+    }
+
+    // When dynamic mode is on, every notification command derives its body from
+    // the hook's stdin JSON (the infrastructure `--daemon` entry stays untouched).
+    apply_dynamic_flag(&mut entries, config.dynamic_message_enabled);
+    entries
 }
 
 #[tauri::command]
@@ -1216,9 +1394,32 @@ pub fn get_saved_exe_path() -> Option<String> {
     None
 }
 
+fn agent_settings_path(agent: Agent) -> PathBuf {
+    match agent {
+        Agent::Claude => settings_path(),
+        Agent::Codex => codex_hooks_path(),
+    }
+}
+
+/// Which agent files exist yet: each appears only after the first save that
+/// registers that agent, so the setup window greys out the missing ones.
+#[derive(Debug, Clone, Serialize)]
+pub struct SettingsFiles {
+    pub claude: bool,
+    pub codex: bool,
+}
+
 #[tauri::command]
-pub fn open_settings_file() -> Result<(), String> {
-    let path = settings_path();
+pub fn get_settings_files() -> SettingsFiles {
+    SettingsFiles {
+        claude: agent_settings_path(Agent::Claude).exists(),
+        codex: agent_settings_path(Agent::Codex).exists(),
+    }
+}
+
+#[tauri::command]
+pub fn open_settings_file(agent: Agent) -> Result<(), String> {
+    let path = agent_settings_path(agent);
     open::that(&path).map_err(|e| e.to_string())
 }
 
@@ -1462,44 +1663,92 @@ pub fn get_toast_style() -> ToastStyle {
     toast_style_from_json(&content)
 }
 
-fn codex_config_path() -> PathBuf {
+fn codex_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".codex")
-        .join("config.toml")
 }
 
-fn save_codex_config(enabled: bool) -> Result<(), String> {
-    let path = codex_config_path();
+fn codex_config_path() -> PathBuf {
+    codex_dir().join("config.toml")
+}
 
-    // Read existing config or start fresh
-    let mut doc: toml::Table = if let Ok(content) = std::fs::read_to_string(&path) {
-        content
-            .parse::<toml::Table>()
-            .unwrap_or_else(|_| toml::Table::new())
+fn codex_hooks_path() -> PathBuf {
+    codex_dir().join("hooks.json")
+}
+
+/// Register (or remove) agent-toast's Codex hooks in `~/.codex/hooks.json`,
+/// which shares Claude's `{ "hooks": { Event: [groups] } }` layout, and drop
+/// the `notify` entry older versions wrote to `config.toml`. Returns whether
+/// hooks.json changed. A hooks.json that is not JSON is left alone and fails
+/// the save rather than being overwritten.
+fn save_codex_hooks(config: &HookConfig, exe: &str) -> Result<bool, String> {
+    let entries = if config.codex_enabled {
+        build_hook_entries(config, exe, Agent::Codex)
     } else {
-        toml::Table::new()
+        Vec::new()
     };
 
-    if enabled {
-        let exe = exe_path_unquoted();
-        let notify_value = toml::Value::Array(vec![
-            toml::Value::String(exe),
-            toml::Value::String("--codex".into()),
-        ]);
-        doc.insert("notify".into(), notify_value);
-    } else {
-        doc.remove("notify");
+    let path = codex_hooks_path();
+    let existing = std::fs::read_to_string(&path).ok();
+    let mut changed = false;
+    // Nothing registered and nothing to register: don't create the file.
+    if existing.is_some() || !entries.is_empty() {
+        let updated = merge_codex_hooks_json(existing.as_deref(), &entries)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        if existing.as_deref() != Some(updated.as_str()) {
+            std::fs::create_dir_all(codex_dir()).map_err(|e| e.to_string())?;
+            std::fs::write(&path, updated).map_err(|e| e.to_string())?;
+            changed = true;
+        }
     }
 
-    // Ensure .codex directory exists
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    // The legacy notify would deliver every turn end a second time next to
+    // the Stop hook.
+    let config_path = codex_config_path();
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        if let Some(updated) = strip_legacy_codex_notify(&content) {
+            std::fs::write(&config_path, updated).map_err(|e| e.to_string())?;
+        }
     }
+    Ok(changed)
+}
 
-    let content = toml::to_string_pretty(&doc).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
-    Ok(())
+/// Pure part of [`save_codex_hooks`]: hooks.json content with agent-toast's
+/// entries replaced by `entries`, everything else kept.
+fn merge_codex_hooks_json(existing: Option<&str>, entries: &[HookEntry]) -> Result<String, String> {
+    let root = match existing {
+        Some(content) if !content.trim().is_empty() => {
+            let root: Value = serde_json::from_str(content).map_err(|e| e.to_string())?;
+            if !root.is_object() {
+                return Err("not a JSON object".into());
+            }
+            root
+        }
+        _ => Value::Object(Default::default()),
+    };
+    let root = merge_agent_toast_hooks(root, entries);
+    serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
+}
+
+/// `config.toml` without the `notify` entry, when that entry is agent-toast's
+/// (`notify = ["…agent-toast.exe", "--codex"]`). `None` leaves the file
+/// untouched: no notify, someone else's notify, or unparsable TOML. Edits in
+/// place so the user's comments and layout survive.
+fn strip_legacy_codex_notify(content: &str) -> Option<String> {
+    let mut doc = content.parse::<toml_edit::DocumentMut>().ok()?;
+    let ours = doc
+        .get("notify")
+        .and_then(|item| item.as_array())
+        .is_some_and(|arr| {
+            arr.iter()
+                .any(|v| v.as_str().is_some_and(is_agent_toast_cmd))
+        });
+    if !ours {
+        return None;
+    }
+    doc.remove("notify");
+    Some(doc.to_string())
 }
 
 /// Extract the command string from a hook entry if it belongs to agent-toast.
@@ -3283,5 +3532,332 @@ mod theme_tests {
             migrate_dynamic_message_default(&first).is_none(),
             "1회 실행 후엔 키가 있으니 영구 no-op"
         );
+    }
+
+    // ── 에이전트별 훅 생성 ──
+
+    const EXE: &str = "\"C:\\agent-toast.exe\"";
+
+    fn entry_summary(entries: &[HookEntry]) -> Vec<(&'static str, Option<&'static str>, String)> {
+        entries
+            .iter()
+            .map(|e| (e.event_key, e.matcher, e.command.clone()))
+            .collect()
+    }
+
+    fn static_config() -> HookConfig {
+        HookConfig {
+            dynamic_message_enabled: false,
+            stop_message: "완료".into(),
+            permission_request_message: "권한".into(),
+            question_message: "질문".into(),
+            ..HookConfig::default()
+        }
+    }
+
+    #[test]
+    fn every_event_spec_has_config_fields() {
+        let mut config = HookConfig::default();
+        for spec in EVENT_SPECS {
+            assert!(config.event(spec.key).is_some(), "{}", spec.key);
+            assert!(config.event_mut(spec.key).is_some(), "{}", spec.key);
+            assert!(
+                spec.claude.is_some() || spec.codex.is_some(),
+                "{} 는 어느 에이전트에도 등록되지 않음",
+                spec.key
+            );
+        }
+    }
+
+    #[test]
+    fn default_claude_entries_keep_existing_command_format() {
+        let entries = build_hook_entries(&static_config(), EXE, Agent::Claude);
+        assert_eq!(
+            entry_summary(&entries),
+            vec![
+                ("SessionStart", None, format!("{EXE} --daemon")),
+                (
+                    "Stop",
+                    None,
+                    format!("{EXE} --event task_complete --message \"완료\"")
+                ),
+                (
+                    "PermissionRequest",
+                    None,
+                    format!("{EXE} --event user_input_required --message \"권한\"")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn default_codex_entries_cover_completion_permission_and_question() {
+        let exe = if cfg!(windows) {
+            format!("& {EXE}")
+        } else {
+            EXE.to_string()
+        };
+        let entries = build_hook_entries(&static_config(), EXE, Agent::Codex);
+        assert_eq!(
+            entry_summary(&entries),
+            vec![
+                (
+                    "SessionStart",
+                    None,
+                    format!("{exe} --daemon --source codex")
+                ),
+                (
+                    "Stop",
+                    None,
+                    format!("{exe} --source codex --event task_complete --message \"완료\"")
+                ),
+                (
+                    "PermissionRequest",
+                    None,
+                    format!("{exe} --source codex --event user_input_required --message \"권한\"")
+                ),
+                (
+                    "PreToolUse",
+                    Some("^request_user_input(_async)?$"),
+                    format!("{exe} --source codex --event user_input_required --message \"질문\"")
+                ),
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_commands_parse_in_powershell_with_spaces_in_exe_path() {
+        let config = HookConfig {
+            dynamic_message_enabled: true,
+            ..static_config()
+        };
+        for entry in build_hook_entries(
+            &config,
+            "\"C:\\Program Files\\Agent Toast\\agent-toast.exe\"",
+            Agent::Codex,
+        ) {
+            let output = std::process::Command::new("powershell.exe")
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "[scriptblock]::Create($env:AGENT_TOAST_TEST_COMMAND) | Out-Null",
+                ])
+                .env("AGENT_TOAST_TEST_COMMAND", &entry.command)
+                .output()
+                .expect("PowerShell must be available on Windows");
+            assert!(
+                output.status.success(),
+                "{}: {}",
+                entry.event_key,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn agent_only_rows_stay_with_their_agent() {
+        let config = HookConfig {
+            notification_idle_enabled: true,
+            post_tool_use_failure_enabled: true,
+            interrupt_enabled: true,
+            post_compact_enabled: true,
+            ..static_config()
+        };
+        let claude: Vec<_> = build_hook_entries(&config, EXE, Agent::Claude)
+            .iter()
+            .map(|e| e.event_key)
+            .collect();
+        let codex: Vec<_> = build_hook_entries(&config, EXE, Agent::Codex)
+            .iter()
+            .map(|e| e.event_key)
+            .collect();
+        assert!(claude.contains(&"Notification"));
+        assert!(claude.contains(&"PostToolUseFailure"));
+        assert!(!claude.contains(&"Interrupt"));
+        assert!(!claude.contains(&"PostCompact"));
+        assert!(
+            !claude.contains(&"PreToolUse"),
+            "질문 행은 Claude 에 훅을 만들지 않음"
+        );
+        assert!(codex.contains(&"Interrupt"));
+        assert!(codex.contains(&"PostCompact"));
+        assert!(!codex.contains(&"Notification"));
+        assert!(!codex.contains(&"PostToolUseFailure"));
+    }
+
+    #[test]
+    fn codex_entries_get_dynamic_flag_except_daemon() {
+        let config = HookConfig {
+            dynamic_message_enabled: true,
+            ..HookConfig::default()
+        };
+        for e in build_hook_entries(&config, EXE, Agent::Codex) {
+            assert_eq!(
+                e.command.ends_with(" --dynamic"),
+                !e.command.contains("--daemon"),
+                "{}",
+                e.command
+            );
+        }
+    }
+
+    #[test]
+    fn no_daemon_entry_without_auto_start() {
+        let config = HookConfig {
+            auto_start: false,
+            ..static_config()
+        };
+        for agent in [Agent::Claude, Agent::Codex] {
+            assert!(build_hook_entries(&config, EXE, agent)
+                .iter()
+                .all(|e| !e.command.contains("--daemon")));
+        }
+    }
+
+    // ── 공용 이벤트 스냅샷 ──
+
+    #[test]
+    fn saved_events_roundtrip_while_claude_disabled() {
+        let config = HookConfig {
+            claude_enabled: false,
+            codex_enabled: true,
+            stop_enabled: false,
+            pre_compact_enabled: true,
+            pre_compact_message: "압축".into(),
+            interrupt_enabled: true,
+            ..static_config()
+        };
+        let mut root = serde_json::json!({});
+        write_agent_toast_settings(&mut root, &config);
+        // Claude 훅은 하나도 없는 상태 (비활성화로 전부 제거됨)
+        let parsed = parse_hook_config_from_json(&root.to_string());
+        assert!(!parsed.claude_enabled);
+        assert!(parsed.codex_enabled);
+        assert!(!parsed.stop_enabled);
+        assert!(parsed.permission_request_enabled);
+        assert!(parsed.pre_compact_enabled);
+        assert_eq!(parsed.pre_compact_message, "압축");
+        assert!(parsed.interrupt_enabled);
+        assert!(parsed.question_enabled);
+        assert_eq!(parsed.question_message, "질문");
+    }
+
+    #[test]
+    fn registered_claude_hooks_win_over_snapshot() {
+        let json = r#"{
+            "hooks": {
+                "Stop": [{"hooks": [{"type": "command", "command": "agent-toast --event task_complete --message \"직접 수정\""}]}]
+            },
+            "agent_toast": {
+                "events": {
+                    "stop": {"enabled": true, "message": "스냅샷"},
+                    "permission_request": {"enabled": true, "message": "스냅샷"},
+                    "question": {"enabled": false, "message": "질문 스냅샷"}
+                }
+            }
+        }"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(config.claude_enabled);
+        assert_eq!(config.stop_message, "직접 수정");
+        assert!(
+            !config.permission_request_enabled,
+            "Claude 가 켜져 있으면 등록된 훅이 기준"
+        );
+        assert!(!config.question_enabled);
+        assert_eq!(config.question_message, "질문 스냅샷");
+    }
+
+    #[test]
+    fn legacy_settings_without_snapshot_default_question_on() {
+        let json = r#"{"agent_toast": {"codex_enabled": true}}"#;
+        let config = parse_hook_config_from_json(json);
+        assert!(config.claude_enabled);
+        assert!(config.question_enabled);
+        assert!(!config.post_compact_enabled);
+        assert!(!config.interrupt_enabled);
+    }
+
+    // ── Codex hooks.json ──
+
+    #[test]
+    fn codex_hooks_json_created_when_absent() {
+        let entries = build_hook_entries(&static_config(), EXE, Agent::Codex);
+        let out: Value =
+            serde_json::from_str(&merge_codex_hooks_json(None, &entries).unwrap()).unwrap();
+        assert_eq!(
+            out["hooks"]["PreToolUse"][0]["matcher"],
+            "^request_user_input(_async)?$"
+        );
+        assert_eq!(out["hooks"]["Stop"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn codex_hooks_json_keeps_other_hooks_and_replaces_ours() {
+        let existing = r#"{
+            "hooks": {
+                "Stop": [
+                    {"hooks": [{"type": "command", "command": "python3 other.py"}]},
+                    {"hooks": [{"type": "command", "command": "\"C:\\old\\agent-toast.exe\" --source codex --event task_complete --message \"옛 문구\""}]}
+                ],
+                "Interrupt": [
+                    {"hooks": [{"type": "command", "command": "\"C:\\old\\agent-toast.exe\" --source codex --event task_complete --message \"x\""}]}
+                ]
+            },
+            "other": 1
+        }"#;
+        let entries = build_hook_entries(&static_config(), EXE, Agent::Codex);
+        let out: Value =
+            serde_json::from_str(&merge_codex_hooks_json(Some(existing), &entries).unwrap())
+                .unwrap();
+        let stop = out["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2);
+        assert_eq!(stop[0]["hooks"][0]["command"], "python3 other.py");
+        assert!(stop[1]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("\"완료\""));
+        assert!(out["hooks"]["Interrupt"].as_array().unwrap().is_empty());
+        assert_eq!(out["other"], 1);
+    }
+
+    #[test]
+    fn codex_hooks_json_disable_removes_only_ours() {
+        let existing = r#"{"hooks": {"Stop": [
+            {"hooks": [{"type": "command", "command": "python3 other.py"}]},
+            {"hooks": [{"type": "command", "command": "agent-toast.exe --source codex --event task_complete"}]}
+        ]}}"#;
+        let out: Value =
+            serde_json::from_str(&merge_codex_hooks_json(Some(existing), &[]).unwrap()).unwrap();
+        let stop = out["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        assert_eq!(stop[0]["hooks"][0]["command"], "python3 other.py");
+    }
+
+    #[test]
+    fn codex_hooks_json_invalid_is_an_error() {
+        assert!(merge_codex_hooks_json(Some("{ broken"), &[]).is_err());
+        assert!(merge_codex_hooks_json(Some("[1]"), &[]).is_err());
+        assert!(merge_codex_hooks_json(Some("  "), &[]).is_ok());
+    }
+
+    // ── 기존 Codex notify 정리 ──
+
+    #[test]
+    fn strip_legacy_notify_removes_ours_and_keeps_layout() {
+        let content = "# my settings\nmodel = \"gpt\"\nnotify = [\"C:\\\\Users\\\\a\\\\agent-toast.exe\", \"--codex\"]\n\n[desktop]\nfoo = true # keep\n";
+        let out = strip_legacy_codex_notify(content).unwrap();
+        assert!(!out.contains("notify"));
+        assert!(out.contains("# my settings"));
+        assert!(out.contains("foo = true # keep"));
+    }
+
+    #[test]
+    fn strip_legacy_notify_leaves_other_programs_alone() {
+        let content = "notify = [\"C:\\\\x\\\\codex-computer-use.exe\", \"turn-ended\"]\n";
+        assert!(strip_legacy_codex_notify(content).is_none());
+        assert!(strip_legacy_codex_notify("model = \"gpt\"\n").is_none());
+        assert!(strip_legacy_codex_notify("not = = toml").is_none());
     }
 }

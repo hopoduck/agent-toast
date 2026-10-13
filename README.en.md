@@ -79,14 +79,16 @@ Or right-click the system tray icon → Settings
 
 ### 2. Configure Hooks
 
-Enable desired events in the settings window to automatically register hooks.
+Turn on the agents you use and the events you want in the Hooks tab, and the hooks are registered automatically. One event setting applies to every agent you turn on.
 
-> 💡 By default the notification body shows the agent's last message (or the tool description on permission requests). Turn off **Use Agent's Message** in the General tab to show each hook's fixed text instead.
+> 💡 By default the notification body shows the agent's last reply, the approval reason, or the question. Turn off **Use Agent's Message** in the Hooks tab to show each notification's fixed text instead.
 
 | Platform    | Config File               |
 | ----------- | ------------------------- |
 | Claude Code | `~/.claude/settings.json` |
-| Codex CLI   | `~/.codex/config.toml`    |
+| Codex CLI   | `~/.codex/hooks.json`     |
+
+> Codex runs the hooks only after you approve them once in Codex's `/hooks`, and again whenever they change.
 
 ## ⚙️ How It Works
 

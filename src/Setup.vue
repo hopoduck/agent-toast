@@ -12,9 +12,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Moon, RotateCcw, Sun } from "lucide-vue-next";
+import { ChevronDown, Moon, RotateCcw, Sun, X } from "lucide-vue-next";
 import { onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast, Toaster } from "vue-sonner";
@@ -27,7 +33,7 @@ import HowtoSettings from "./components/HowtoSettings.vue";
 import RemoteSettings from "./components/RemoteSettings.vue";
 import SlidingTabs from "./components/SlidingTabs.vue";
 import StatsSettings from "./components/StatsSettings.vue";
-import type { HookConfig } from "./types";
+import type { HookConfig, SaveResult, SettingsFiles } from "./types";
 
 const { t, locale } = useI18n();
 const activeTab = ref<string>("general");
@@ -107,6 +113,12 @@ const config = ref<HookConfig>({
   permission_request_message: "권한 요청이 발생했습니다",
   subagent_start_enabled: false,
   subagent_start_message: "서브에이전트가 시작되었습니다",
+  question_enabled: true,
+  question_message: "답변이 필요합니다",
+  post_compact_enabled: false,
+  post_compact_message: "컨텍스트 압축이 끝났습니다",
+  interrupt_enabled: false,
+  interrupt_message: "진행 중인 응답이 중단되었습니다",
   title_display_mode: "project",
   auto_close_on_focus: true,
   auto_dismiss_seconds: 0,
@@ -116,6 +128,7 @@ const config = ref<HookConfig>({
   notification_monitor: "primary",
   locale: navigator.language.startsWith("ko") ? "ko" : "en",
   auto_start: true,
+  claude_enabled: true,
   codex_enabled: false,
   http_enabled: false,
   http_port: 38787,
@@ -142,6 +155,7 @@ const exePath = ref("");
 const savedExePath = ref<string | null>(null);
 const exePathMismatch = ref(false);
 const isSaving = ref(false);
+const codexRestartNeeded = ref(false);
 const isDevMode = ref(false);
 
 function normalizePath(p: string): string {
@@ -171,6 +185,7 @@ onMounted(async () => {
     }
   });
 
+  refreshSettingsFiles();
   configSaved.value = await invoke<boolean>("is_hook_config_saved");
   if (configSaved.value) {
     config.value = await invoke<HookConfig>("get_hook_config");
@@ -184,6 +199,8 @@ onMounted(async () => {
     config.value.notification_sound_file = saved.notification_sound_file;
     config.value.notification_monitor = saved.notification_monitor;
     config.value.locale = saved.locale;
+    // 첫 실행: 백엔드가 설치된 에이전트를 보고 정한 기본값
+    config.value.claude_enabled = saved.claude_enabled;
     config.value.codex_enabled = saved.codex_enabled;
   }
   locale.value = config.value.locale;
@@ -199,15 +216,11 @@ onMounted(async () => {
 async function onSave() {
   isSaving.value = true;
   try {
-    const path = await invoke<string>("save_hook_config", {
+    const result = await invoke<SaveResult>("save_hook_config", {
       config: config.value,
     });
-    const lines = path.split("\n");
-    toast.success(t("setup.save_success", { path: lines[0] }), {
-      description: lines[1]
-        ? t("setup.save_success", { path: lines[1] })
-        : undefined,
-    });
+    toast.success(t("setup.save_success"));
+    if (result.codex_hooks_path) codexRestartNeeded.value = true;
     configSaved.value = true;
     exePathMismatch.value = false;
   } catch (e) {
@@ -217,12 +230,28 @@ async function onSave() {
   }
 }
 
-async function onOpenSettings() {
-  await invoke("open_settings_file");
+const settingsFiles = ref<SettingsFiles>({ claude: false, codex: false });
+const settingsFileItems = [
+  { agent: "claude", name: "Claude Code", file: "settings.json" },
+  { agent: "codex", name: "Codex", file: "hooks.json" },
+] as const;
+
+async function refreshSettingsFiles() {
+  settingsFiles.value = await invoke<SettingsFiles>("get_settings_files");
+}
+
+async function onOpenSettings(agent: keyof SettingsFiles) {
+  try {
+    await invoke("open_settings_file", { agent });
+  } catch (e) {
+    toast.error(t("setup.save_error", { msg: String(e) }));
+  }
 }
 
 function onReset() {
   const currentLocale = config.value.locale;
+  // 사용할 에이전트는 취향이 아니라 설치 환경이라 그대로 둔다
+  const { claude_enabled, codex_enabled } = config.value;
   config.value = {
     stop_enabled: true,
     stop_message: t("defaults.stop_message"),
@@ -258,6 +287,12 @@ function onReset() {
     permission_request_message: t("defaults.permission_request_message"),
     subagent_start_enabled: false,
     subagent_start_message: t("defaults.subagent_start_message"),
+    question_enabled: true,
+    question_message: t("defaults.question_message"),
+    post_compact_enabled: false,
+    post_compact_message: t("defaults.post_compact_message"),
+    interrupt_enabled: false,
+    interrupt_message: t("defaults.interrupt_message"),
     title_display_mode: "project",
     auto_close_on_focus: true,
     auto_dismiss_seconds: 0,
@@ -267,7 +302,8 @@ function onReset() {
     notification_monitor: "primary",
     locale: currentLocale,
     auto_start: true,
-    codex_enabled: false,
+    claude_enabled,
+    codex_enabled,
     http_enabled: false,
     http_port: 38787,
     show_hostname: true,
@@ -418,11 +454,58 @@ async function onClose() {
         </div>
       </div>
 
+      <!-- Codex restart notice: 할 일이라 사라지는 토스트 대신 닫을 때까지 남긴다 -->
+      <Card
+        v-if="codexRestartNeeded"
+        class="border-event-warning/40 bg-event-warning/8 gap-1 py-3"
+      >
+        <CardContent class="flex items-start gap-2 text-xs text-event-warning">
+          <div class="flex flex-col gap-1 flex-1 min-w-0">
+            <strong class="text-[13px]">{{ $t("setup.codex_trust_title") }}</strong>
+            <p class="text-event-warning/85 text-sm">
+              {{ $t("setup.codex_trust_desc") }}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            class="-mt-1 -mr-2 shrink-0 text-event-warning hover:bg-event-warning/10 hover:text-event-warning"
+            :aria-label="t('setup.close')"
+            @click="codexRestartNeeded = false"
+          >
+            <X />
+          </Button>
+        </CardContent>
+      </Card>
+
       <!-- Actions -->
       <div v-if="activeTab !== 'about' && activeTab !== 'howto' && activeTab !== 'stats'" class="flex items-center gap-2">
-        <Button variant="secondary" @click="onOpenSettings">
-          {{ t("setup.open_settings") }}
-        </Button>
+        <DropdownMenu @update:open="(open) => open && refreshSettingsFiles()">
+          <DropdownMenuTrigger as-child>
+            <Button variant="secondary">
+              {{ t("setup.open_settings") }}
+              <ChevronDown />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem
+              v-for="item in settingsFileItems"
+              :key="item.agent"
+              :disabled="!settingsFiles[item.agent]"
+              @select="onOpenSettings(item.agent)"
+            >
+              <div class="flex flex-col">
+                <span>
+                  {{ item.name }}
+                  <span class="ml-1 font-mono text-xs text-muted-foreground">{{ item.file }}</span>
+                </span>
+                <span v-if="!settingsFiles[item.agent]" class="text-xs text-muted-foreground">
+                  {{ t("setup.open_settings_missing") }}
+                </span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div class="flex-1" />
         <Button variant="destructive" @click="onClose">
           {{ t("setup.close") }}

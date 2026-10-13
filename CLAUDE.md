@@ -69,7 +69,7 @@ crates/
     src/wire.rs                     # NotifyRequest (+ hostname, alt_title_hint), WIRE_VERSION
     src/hook_config.rs              # merge_agent_toast_hooks, HookEntry, is_agent_toast_cmd
     src/ide.rs                      # read_ide_project_name: JetBrains `.idea/.name` lookup
-    src/dynamic.rs                  # --dynamic: derive toast body from hook stdin JSON (tool_input.description → last_assistant_message → static --message)
+    src/dynamic.rs                  # --dynamic: derive toast body from hook stdin JSON (tool_input.description → tool_input.questions[].question → last_assistant_message → static --message)
   agent-toast-desktop/              # Windows-only Tauri app (was src-tauri/)
     src/main.rs, lib.rs, cli.rs, pipe.rs, http_server.rs,
     notification.rs, win32.rs, setup.rs, sound.rs, updater.rs,
@@ -140,7 +140,7 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 | `components/ToastCard.vue`       | The toast card itself — event-type color coding, inline markdown body (markdown-it, escaped), Claude/OpenAI logo, applies `ToastStyle` (font + design) |
 | `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / design / howto / about) |
 | `components/GeneralSettings.vue` | Position, auto-dismiss, sound settings                                         |
-| `components/HookSettings.vue`    | Per-event hook enable/message config for 15 Claude Code hook events            |
+| `components/HookSettings.vue`    | Agent switches (Claude Code / Codex), agent-message toggle, and shared per-event enable/message rows |
 | `components/RemoteSettings.vue`  | Remote HTTP receiver settings + `agent-toast-send` setup guide                 |
 | `components/DesignSettings.vue`  | Toast appearance — sans/mono system-font picker (`ToastStyle`), bundled D2Coding, live preview |
 | `components/HowtoSettings.vue`   | Usage guide tab                                                                |
@@ -156,9 +156,12 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 agent-toast.exe --pid 1234 --event task_complete --message "Build done"
 agent-toast.exe --daemon          # Run in background without notification
 agent-toast.exe --setup           # Open settings window
-agent-toast.exe --codex           # Codex CLI integration notification
+agent-toast.exe --source codex --event task_complete --dynamic   # Codex hook (reads cwd from stdin, prints {} on stdout)
+agent-toast.exe --codex '<json>'  # Legacy Codex `notify` payload (no longer registered, still accepted)
 agent-toast.exe --pid 1234 --event task_complete --dynamic   # Derive body from hook stdin JSON (falls back to --message)
 ```
+
+`--dynamic` picks the body in order: `tool_input.description` → `tool_input.questions[].question` (Claude `AskUserQuestion`, Codex `request_user_input`) → `last_assistant_message` → `--message`.
 
 Events: `task_complete`, `user_input_required`, `error`
 
@@ -176,8 +179,13 @@ Events: `task_complete`, `user_input_required`, `error`
 
 ### User Settings
 
-- `~/.claude/settings.json`: Claude Code hook settings (read/written by setup.rs, preserves non-agent-toast hooks)
-- `~/.codex/config.toml`: Codex CLI notification hook settings
+- `~/.claude/settings.json`: Claude Code hook settings (read/written by setup.rs, preserves non-agent-toast hooks). Its `agent_toast` block also holds `claude_enabled`/`codex_enabled` and an `events` snapshot of every row, which is how Codex-only rows and a disabled Claude's choices survive.
+- `~/.codex/hooks.json`: Codex hooks, same `{ "hooks": { Event: [groups] } }` layout, merged with the same core helper. Codex runs a hook only after the user trusts it in `/hooks`, and any command change (message text included) needs trusting again. A running Codex session never re-reads hooks.json (openai/codex#17636), so a save takes effect only after a restart, where Codex prompts for review on its own.
+- `~/.codex/config.toml`: only touched to remove the legacy `notify = [agent-toast, "--codex"]` entry, edited in place with `toml_edit`; someone else's `notify` is left alone.
+
+### Hook rows (`EVENT_SPECS` in `setup.rs`)
+
+One switch and message per row, registered for each enabled agent that supports it. `HookSettings.vue` mirrors the same mapping for its hook chips. Codex has no `Notification` event, so those rows are Claude-only; Claude's questions arrive as `PermissionRequest`, so the `question` row (`PreToolUse` matcher `^request_user_input$`) is Codex-only.
 
 ## Intro Video (`video/`)
 

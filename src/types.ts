@@ -42,6 +42,12 @@ export interface HookConfig {
   permission_request_message: string;
   subagent_start_enabled: boolean;
   subagent_start_message: string;
+  question_enabled: boolean;
+  question_message: string;
+  post_compact_enabled: boolean;
+  post_compact_message: string;
+  interrupt_enabled: boolean;
+  interrupt_message: string;
   title_display_mode: string;
   auto_close_on_focus: boolean;
   auto_dismiss_seconds: number;
@@ -51,6 +57,7 @@ export interface HookConfig {
   notification_monitor: string;
   locale: string;
   auto_start: boolean;
+  claude_enabled: boolean;
   codex_enabled: boolean;
   http_enabled: boolean;
   http_port: number;
@@ -63,6 +70,22 @@ export interface HookConfig {
   toast_density: string;
   toast_font_sans: string;
   toast_font_mono: string;
+}
+
+export interface AgentPresence {
+  claude: boolean;
+  codex: boolean;
+}
+
+/** 에이전트별 설정 파일이 디스크에 있는지. 첫 저장 전에는 없다 */
+export interface SettingsFiles {
+  claude: boolean;
+  codex: boolean;
+}
+
+export interface SaveResult {
+  /** Codex 훅을 새로 등록하거나 바꿨을 때만 값이 있음 (Codex /hooks 승인 필요) */
+  codex_hooks_path: string | null;
 }
 
 export interface MonitorInfo {

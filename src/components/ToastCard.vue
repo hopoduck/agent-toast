@@ -9,7 +9,7 @@ import type { NotificationData, ToastStyle } from "../types";
 
 const { t } = useI18n();
 
-type EventType = "default" | "success" | "warning" | "error" | "codex";
+type EventType = "default" | "success" | "warning" | "error";
 
 const props = withDefaults(
   defineProps<{
@@ -48,10 +48,10 @@ const messageHtml = computed(() => {
   return message ? md.renderInline(message) : null;
 });
 
+// 색은 에이전트와 무관하게 이벤트 종류를 따른다. agent_turn_complete 는 예전 Codex notify 경로.
 const eventType = computed<EventType>(() => {
-  if (isCodex.value) return "codex";
   const ev = props.notification.event_display;
-  if (ev === "task_complete") return "success";
+  if (ev === "task_complete" || ev === "agent_turn_complete") return "success";
   if (ev === "user_input_required") return "warning";
   if (ev === "error") return "error";
   return "default";
@@ -68,13 +68,14 @@ const eventIconMap: Record<EventType, Component> = {
   success: Check,
   warning: Pencil,
   error: X,
-  codex: Check,
   default: Circle,
 };
 
 const eventIcon = computed(() => eventIconMap[eventType.value]);
 
 const sourceLogo = computed(() => (isCodex.value ? openaiLogo : claudeLogo));
+// openai.svg 는 흰색이라 라이트 테마에서만 반전
+const sourceLogoClass = computed(() => (isCodex.value ? "invert dark:invert-0" : ""));
 
 const isUpdateAvailable = computed(
   () =>
@@ -132,15 +133,6 @@ const eventStyles: Record<
       "bg-event-error text-zinc-950 border-transparent hover:bg-event-error-deep",
     dismissBar: "bg-event-error/30",
     accentVar: "var(--event-error)",
-  },
-  codex: {
-    accent: "bg-gradient-to-b from-event-codex to-event-codex-deep",
-    icon: "bg-event-codex/20 text-event-codex",
-    label: "text-event-codex",
-    viewBtn:
-      "bg-event-codex text-zinc-950 border-transparent hover:bg-event-codex-deep",
-    dismissBar: "bg-event-codex/30",
-    accentVar: "var(--event-codex)",
   },
 };
 
@@ -305,6 +297,7 @@ const fontVars = computed(() => {
             </span>
             <img
               class="size-3.5 object-contain opacity-85"
+              :class="sourceLogoClass"
               :src="sourceLogo"
               alt=""
             />
@@ -383,6 +376,7 @@ const fontVars = computed(() => {
           >
             <img
               class="size-3.5 object-contain opacity-85"
+              :class="sourceLogoClass"
               :src="sourceLogo"
               alt=""
             />

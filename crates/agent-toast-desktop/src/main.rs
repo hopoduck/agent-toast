@@ -130,10 +130,32 @@ fn acquire_singleton_waiting(timeout: std::time::Duration) -> Option<SingletonGu
 /// 재시작 경합을 흡수할 시간. 오늘 관측된 최악의 종료 지연이 2초대였다.
 const SINGLETON_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Codex treats a hook that exits 0 without JSON on stdout as failed (Stop in
+/// particular), so every Codex hook invocation answers with an empty object on
+/// the way out, whichever path it took.
+struct CodexHookAnswer;
+
+impl Drop for CodexHookAnswer {
+    fn drop(&mut self) {
+        use std::io::Write;
+        let mut out = std::io::stdout();
+        let _ = out.write_all(b"{}\n");
+        let _ = out.flush();
+    }
+}
+
 fn main() {
     let args = Cli::parse();
+    let is_codex_hook = args.source == "codex";
+    // Not `then_some`: it builds the guard eagerly and drops it when false,
+    // which would print `{}` on every invocation.
+    let _codex_answer = if is_codex_hook {
+        Some(CodexHookAnswer)
+    } else {
+        None
+    };
 
-    // --codex mode: parse JSON from Codex CLI
+    // Legacy --codex mode: parse JSON from Codex CLI `notify`
     if args.codex {
         let json_str = args.codex_json.unwrap_or_default();
         let codex_payload: serde_json::Value =
@@ -288,22 +310,44 @@ fn main() {
         .event
         .expect("--event is required when not using --daemon");
 
+    // The hook's stdin JSON carries the dynamic body candidates, and for Codex
+    // also the project folder (`cwd`), since Codex sets no project env var.
+    let hook_json = if args.dynamic || is_codex_hook {
+        agent_toast_core::dynamic::read_stdin_json()
+    } else {
+        None
+    };
+
     // With --dynamic, derive the body from the hook's stdin JSON; otherwise use
     // the static --message as-is.
-    let message = if args.dynamic {
-        agent_toast_core::dynamic::resolve_from_stdin(args.message.as_deref())
-    } else {
-        args.message
+    let message = match (&hook_json, args.dynamic) {
+        (Some(hook), true) => {
+            agent_toast_core::dynamic::resolve_message(hook, args.message.as_deref())
+        }
+        _ => args.message,
     };
 
     // Pre-resolve process tree while the process is still alive
     let process_tree = win32::get_process_tree(pid);
 
-    // Title hint: use --title arg, or fall back to CLAUDE_PROJECT_DIR env var.
+    // Title hint: use --title arg, or fall back to the project folder: Claude
+    // exports CLAUDE_PROJECT_DIR, Codex sends `cwd` (and runs hooks in it).
     // Extract folder name from path (e.g. "C:\foo\bar" -> "bar") for window title matching.
-    let project_dir = args
-        .title
-        .or_else(|| std::env::var("CLAUDE_PROJECT_DIR").ok());
+    let project_dir = args.title.or_else(|| {
+        if is_codex_hook {
+            hook_json
+                .as_ref()
+                .and_then(|h| h["cwd"].as_str())
+                .map(str::to_string)
+                .or_else(|| {
+                    std::env::current_dir()
+                        .ok()
+                        .map(|d| d.to_string_lossy().to_string())
+                })
+        } else {
+            std::env::var("CLAUDE_PROJECT_DIR").ok()
+        }
+    });
     let title_hint = project_dir.as_deref().map(folder_name);
     // JetBrains IDEs title their frames with the project name rather than the
     // folder, and all frames share one PID — without this hint there is nothing
@@ -319,7 +363,7 @@ fn main() {
         title_hint,
         alt_title_hint,
         process_tree: Some(process_tree),
-        source: "claude".into(),
+        source: if is_codex_hook { "codex" } else { "claude" }.into(),
         hostname: None,
         orca_terminal_handle: orca_terminal_handle(),
         orca_tab_id: orca_tab_id(),
