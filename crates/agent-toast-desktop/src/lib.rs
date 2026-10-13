@@ -209,7 +209,8 @@ fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     log::debug!("activate_source called: hwnd={}, id={}", hwnd, id);
     let state = app.state::<NotificationManagerState>();
     // Read before closing — the notification is gone from the manager after.
-    let orca_handle = get_notification_for_window(&state, &id).and_then(|n| n.orca_terminal_handle);
+    let orca_target = get_notification_for_window(&state, &id)
+        .and_then(|n| n.orca_terminal_handle.map(|handle| (handle, n.orca_tab_id)));
     // 활성화보다 먼저 Activated로 닫아 알림을 매니저에서 제거한다. activate_window가
     // 소스 창을 포그라운드로 올리면 EVENT_SYSTEM_FOREGROUND가 발생하고, 포그라운드
     // 리스너 스레드가 이 토스트를 Focus 사유로 먼저 닫아버리는 경쟁이 생기는데
@@ -224,9 +225,9 @@ fn activate_source(hwnd: isize, id: String, app: AppHandle) {
     // Raising Orca's window only lands on whatever tab was last open, so ask
     // the runtime to switch to the session that actually notified. Off-thread:
     // the RPC must never hold up the click.
-    if let Some(handle) = orca_handle {
+    if let Some((handle, tab_id)) = orca_target {
         std::thread::spawn(move || {
-            let switched = orca::focus_terminal(&handle);
+            let switched = orca::focus_terminal(&handle, tab_id.as_deref());
             log::debug!("[ACTIVATE] orca tab {} switched={}", handle, switched);
         });
     }

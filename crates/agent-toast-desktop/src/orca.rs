@@ -360,12 +360,54 @@ pub fn active_tab_id() -> Option<String> {
 /// Bring one terminal tab to the front. `navigation: "host"` asks Orca to
 /// surface the tab's own window too, which matters when the notification came
 /// from a workspace that is not the one on screen.
-pub fn focus_terminal(handle: &str) -> bool {
+///
+/// The handle comes from `ORCA_TERMINAL_HANDLE`, fixed when the shell started,
+/// but Orca can issue the tab a new one while the shell lives on in the
+/// detached daemon (seen across an Orca update: the old handle then fails with
+/// `terminal_handle_stale`). The tab id survives that, so a failed focus looks
+/// the tab's current handle up and tries once more.
+pub fn focus_terminal(handle: &str, tab_id: Option<&str>) -> bool {
+    if focus_handle(handle) {
+        return true;
+    }
+    let Some(tab_id) = tab_id else {
+        return false;
+    };
+    let Some(current) = call("terminal.list", serde_json::json!({ "limit": 10000 }))
+        .and_then(|list| handle_for_tab(&list, tab_id))
+    else {
+        return false;
+    };
+    if current == handle {
+        return false;
+    }
+    log::debug!(
+        "[ORCA] handle {} failed, retrying tab {} via {}",
+        handle,
+        tab_id,
+        current
+    );
+    focus_handle(&current)
+}
+
+fn focus_handle(handle: &str) -> bool {
     call(
         "terminal.focus",
         serde_json::json!({ "terminal": handle, "navigation": "host" }),
     )
     .is_some()
+}
+
+/// Handle of a live terminal in `tab_id`, from a `terminal.list` result. Any
+/// pane of a split tab will do: focusing one switches to the whole tab.
+fn handle_for_tab(list: &serde_json::Value, tab_id: &str) -> Option<String> {
+    list.get("terminals")?
+        .as_array()?
+        .iter()
+        .find(|t| t.get("tabId").and_then(|v| v.as_str()) == Some(tab_id))?
+        .get("handle")?
+        .as_str()
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -446,6 +488,27 @@ mod tests {
         });
         let result = read_frame(&frame, "req-1").unwrap().unwrap();
         assert_eq!(result["handle"], "term_58587268");
+    }
+
+    #[test]
+    fn finds_the_current_handle_of_a_tab() {
+        let list = serde_json::json!({
+            "terminals": [
+                { "handle": "term_other", "tabId": "tab-1" },
+                { "handle": "term_fresh", "tabId": "tab-2", "title": "x" }
+            ]
+        });
+        assert_eq!(
+            handle_for_tab(&list, "tab-2").as_deref(),
+            Some("term_fresh")
+        );
+    }
+
+    #[test]
+    fn unknown_tab_or_odd_list_yields_none() {
+        let list = serde_json::json!({ "terminals": [{ "handle": "term_a", "tabId": "tab-1" }] });
+        assert_eq!(handle_for_tab(&list, "tab-9"), None);
+        assert_eq!(handle_for_tab(&serde_json::json!({}), "tab-1"), None);
     }
 
     const PROFILE_INDEX: &str = r#"{
