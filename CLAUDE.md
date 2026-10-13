@@ -167,6 +167,8 @@ Events: `task_complete`, `user_input_required`, `error`
 
 `ORCA_TERMINAL_HANDLE` and `ORCA_TAB_ID` env vars (exported by Orca into every managed terminal) are forwarded as `orca_terminal_handle` and `orca_tab_id`. The handle identifies the terminal and is what a toast click hands back to `terminal.focus`; the tab id is what skip and auto-close compare against Orca's recorded active tab. Only the local Windows path sends them; `agent-toast-send` leaves both unset because a remote host can reach neither the desktop's Orca runtime nor its state.
 
+Both CLIs always read the hook's stdin JSON (1s timeout, so a caller that leaves the pipe open never hangs) and forward its `session_id` (sent by Claude Code and Codex on every hook). A new toast from the same session closes the one already on screen and takes the newest slot in the stack; a replaced toast records no close reason in stats. Requests without a session id (manual calls, legacy `--codex`, older senders) never replace anything.
+
 `CLAUDE_PROJECT_DIR` env var is used as `title_hint` for window matching when `--title` is not provided. Its `.idea/.name` (the JetBrains project name, present when it differs from the folder name) is sent as `alt_title_hint`, a matching-only hint — the toast still displays `title_hint`.
 
 ## Configuration Files

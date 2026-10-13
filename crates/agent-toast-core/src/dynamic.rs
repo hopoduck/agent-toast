@@ -105,8 +105,22 @@ pub fn resolve_message(hook: &Value, fallback: Option<&str>) -> Option<String> {
         .or_else(|| fallback.map(str::to_string))
 }
 
+/// Agent session id from a hook payload. Claude Code and Codex both send
+/// `session_id` on every hook event.
+pub fn extract_session_id(hook: &Value) -> Option<String> {
+    hook["session_id"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// How long [`read_stdin_json`] waits for EOF. Hook runners write the JSON and
+/// close stdin right away; only a caller that leaves an inherited pipe open
+/// (a script, a test harness) ever reaches this.
+const STDIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Read the hook event JSON from stdin. `None` when stdin is a terminal, empty,
-/// unreadable, or not JSON.
+/// unreadable, not JSON, or still open after [`STDIN_TIMEOUT`].
 pub fn read_stdin_json() -> Option<Value> {
     use std::io::{IsTerminal, Read};
     // Manual terminal invocation: no hook JSON will ever arrive on stdin, and
@@ -115,28 +129,39 @@ pub fn read_stdin_json() -> Option<Value> {
     if std::io::stdin().is_terminal() {
         return None;
     }
-    let mut buf = String::new();
-    if std::io::stdin().read_to_string(&mut buf).is_err() || buf.trim().is_empty() {
+    // stdin is read on every invocation, not only with --dynamic, so a pipe
+    // nobody closes must not hang the CLI. The reader thread is left behind on
+    // timeout; the process exits shortly after anyway.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = String::new();
+        let read = std::io::stdin().read_to_string(&mut buf).map(|_| buf);
+        let _ = tx.send(read.ok());
+    });
+    let buf = rx.recv_timeout(STDIN_TIMEOUT).ok().flatten()?;
+    if buf.trim().is_empty() {
         return None;
     }
     serde_json::from_str(&buf).ok()
-}
-
-/// Read the hook event JSON from stdin and [`resolve_message`] it. Shared by the
-/// `--dynamic` path of both the desktop and remote (`agent-toast-send`) CLIs.
-/// Any failure (no stdin, empty, bad JSON, no usable field) falls back to
-/// `fallback` so the toast is never empty.
-pub fn resolve_from_stdin(fallback: Option<&str>) -> Option<String> {
-    match read_stdin_json() {
-        Some(hook) => resolve_message(&hook, fallback),
-        None => fallback.map(str::to_string),
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn session_id_extracted_when_present() {
+        let hook = json!({ "session_id": "abc-123", "hook_event_name": "Stop" });
+        assert_eq!(extract_session_id(&hook).as_deref(), Some("abc-123"));
+    }
+
+    #[test]
+    fn session_id_none_when_absent_or_empty() {
+        assert!(extract_session_id(&json!({ "hook_event_name": "Stop" })).is_none());
+        assert!(extract_session_id(&json!({ "session_id": "" })).is_none());
+        assert!(extract_session_id(&json!({ "session_id": 42 })).is_none());
+    }
 
     #[test]
     fn truncate_short_string_unchanged() {

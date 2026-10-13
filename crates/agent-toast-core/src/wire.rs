@@ -70,6 +70,17 @@ pub struct NotifyRequest {
     /// makes the tab the right granularity for that question anyway.
     #[serde(default)]
     pub orca_tab_id: Option<String>,
+
+    /// Agent session id (`session_id` from the hook's stdin JSON, sent by both
+    /// Claude Code and Codex).
+    ///
+    /// Sessions opened in the same folder share the title hint, and terminal
+    /// tabs share one window, so neither tells two sessions apart. This does:
+    /// a new toast replaces the one already on screen for the same session.
+    /// `None` when the sender had no hook JSON (manual call, legacy `--codex`,
+    /// older sender), and then every toast stands on its own.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 fn default_source() -> String {
@@ -99,6 +110,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         }
     }
 
@@ -129,6 +141,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -158,6 +171,22 @@ mod tests {
         let req: NotifyRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.title_hint.as_deref(), Some("bmp_api"));
         assert!(req.alt_title_hint.is_none());
+    }
+
+    #[test]
+    fn session_id_defaults_to_none_for_older_senders() {
+        let json = r#"{"pid":1,"event":"task_complete"}"#;
+        let req: NotifyRequest = serde_json::from_str(json).unwrap();
+        assert!(req.session_id.is_none());
+    }
+
+    #[test]
+    fn session_id_roundtrip() {
+        let mut req = make_request("task_complete");
+        req.session_id = Some("abc-123".into());
+        let json = serde_json::to_string(&req).unwrap();
+        let decoded: NotifyRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.session_id.as_deref(), Some("abc-123"));
     }
 
     #[test]
@@ -214,6 +243,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -233,6 +263,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -255,6 +286,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -274,6 +306,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: NotifyRequest = serde_json::from_str(&json).unwrap();
@@ -293,6 +326,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         assert_eq!(req.pid, 0);
     }
@@ -310,6 +344,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         assert_eq!(req.event, "");
         assert_eq!(req.event_display(), "");
@@ -346,6 +381,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let cloned = req.clone();
         assert_eq!(cloned.pid, req.pid);
@@ -376,6 +412,7 @@ mod tests {
             source: "claude".into(),
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
             hostname: Some("prod-vps-01".into()),
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -396,6 +433,7 @@ mod tests {
             source: "claude".into(),
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
             hostname: Some("회사-서버-01".into()),
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -415,6 +453,7 @@ mod tests {
             source: "claude".into(),
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
             hostname: Some(String::new()),
         };
         let json = serde_json::to_string(&req).unwrap();

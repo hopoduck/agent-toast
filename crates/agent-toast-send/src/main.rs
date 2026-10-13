@@ -117,6 +117,7 @@ fn build_request(args: &SendArgs) -> agent_toast_core::NotifyRequest {
         // sender can reach.
         orca_terminal_handle: None,
         orca_tab_id: None,
+        session_id: None,
     }
 }
 
@@ -138,11 +139,18 @@ fn run_send(args: SendArgs) -> i32 {
     }
 
     let mut req = build_request(&args);
-    // --dynamic: replace the static message with one derived from the hook's
-    // stdin JSON (shared logic with the desktop CLI via core).
+    // The hook's stdin JSON carries the session id (always) and the dynamic
+    // body candidates (with --dynamic), via the same core logic as the desktop CLI.
+    let hook = agent_toast_core::dynamic::read_stdin_json();
     if args.dynamic {
-        req.message = agent_toast_core::dynamic::resolve_from_stdin(args.message.as_deref());
+        req.message = match &hook {
+            Some(h) => agent_toast_core::dynamic::resolve_message(h, args.message.as_deref()),
+            None => args.message.clone(),
+        };
     }
+    req.session_id = hook
+        .as_ref()
+        .and_then(agent_toast_core::dynamic::extract_session_id);
     let body = match serde_json::to_vec(&req) {
         Ok(b) => b,
         Err(e) => {

@@ -14,20 +14,43 @@ pub fn is_server_running() -> bool {
 }
 
 pub fn try_send(request: &NotifyRequest) -> Result<bool, Box<dyn std::error::Error>> {
-    use std::fs::OpenOptions;
+    try_send_to(PIPE_NAME, request)
+}
 
-    let file = OpenOptions::new().write(true).open(PIPE_NAME);
-    match file {
-        Ok(mut f) => {
-            let data = serde_json::to_vec(request)?;
-            let len = (data.len() as u32).to_le_bytes();
-            f.write_all(&len)?;
-            f.write_all(&data)?;
-            f.flush()?;
-            Ok(true)
+fn try_send_to(name: &str, request: &NotifyRequest) -> Result<bool, Box<dyn std::error::Error>> {
+    use std::fs::OpenOptions;
+    use std::time::{Duration, Instant};
+
+    // The single receiver can be busy, or briefly absent between instances.
+    // Retry only the connection: retrying a partial write could duplicate a toast.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut f = loop {
+        match OpenOptions::new().write(true).open(name) {
+            Ok(file) => break file,
+            Err(error) if transient_connect_error(&error) => {
+                if Instant::now() >= deadline {
+                    log::debug!("[PIPE] Connection unavailable after retry: {error}");
+                    return Ok(false);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => return Err(error.into()),
         }
-        Err(_) => Ok(false),
+    };
+    let data = serde_json::to_vec(request)?;
+    let len = (data.len() as u32).to_le_bytes();
+    f.write_all(&len)?;
+    f.write_all(&data)?;
+    f.flush()?;
+    Ok(true)
+}
+
+fn transient_connect_error(error: &std::io::Error) -> bool {
+    #[cfg(windows)]
+    if error.raw_os_error() == Some(windows::Win32::Foundation::ERROR_PIPE_BUSY.0 as i32) {
+        return true;
     }
+    error.kind() == std::io::ErrorKind::NotFound
 }
 
 pub fn start_server<F>(on_request: F)
@@ -51,16 +74,31 @@ where
 }
 
 #[cfg(windows)]
+fn connect_pipe(handle: windows::Win32::Foundation::HANDLE) -> windows::core::Result<()> {
+    match unsafe { windows::Win32::System::Pipes::ConnectNamedPipe(handle, None) } {
+        Err(error)
+            if error.code() == windows::Win32::Foundation::ERROR_PIPE_CONNECTED.to_hresult()
+                || error.code() == windows::Win32::Foundation::ERROR_NO_DATA.to_hresult() =>
+        {
+            // A fast sender may already have closed. Buffered bytes are still
+            // readable; an empty probe is handled as BROKEN_PIPE by the reader.
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+#[cfg(windows)]
 fn run_pipe_instance<F>(on_request: &F) -> Result<(), Box<dyn std::error::Error>>
 where
     F: Fn(NotifyRequest),
 {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
     use windows::core::HSTRING;
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+    use windows::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
     use windows::Win32::Storage::FileSystem::{ReadFile, PIPE_ACCESS_INBOUND};
     use windows::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE,
-        PIPE_TYPE_BYTE, PIPE_WAIT,
+        CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
 
     let pipe_name = HSTRING::from(PIPE_NAME);
@@ -81,12 +119,13 @@ where
         let err = unsafe { windows::Win32::Foundation::GetLastError() };
         return Err(format!("Failed to create named pipe (error {})", err.0).into());
     }
+    // Close on every return path, including connection/read failures.
+    let _owner = unsafe { OwnedHandle::from_raw_handle(handle.0) };
 
     // ConnectNamedPipe returns Result<()> in windows 0.58
     log::debug!("[PIPE] Waiting for client connection...");
     crate::watchdog::mark(crate::watchdog::Step::PipeWaitConnect);
-    unsafe { ConnectNamedPipe(handle, None) }
-        .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+    connect_pipe(handle).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
     log::debug!("[PIPE] Client connected");
     crate::watchdog::mark(crate::watchdog::Step::PipeRead);
 
@@ -99,7 +138,6 @@ where
         let is_broken_pipe = e.code() == windows::Win32::Foundation::ERROR_BROKEN_PIPE.to_hresult();
         unsafe {
             let _ = DisconnectNamedPipe(handle);
-            let _ = CloseHandle(handle);
         }
         if is_broken_pipe {
             log::debug!("[PIPE] Client disconnected without sending data");
@@ -138,9 +176,6 @@ where
         if let Err(e) = DisconnectNamedPipe(handle) {
             log::warn!("[PIPE] DisconnectNamedPipe failed: {:?}", e);
         }
-        if let Err(e) = CloseHandle(handle) {
-            log::warn!("[PIPE] CloseHandle failed: {:?}", e);
-        }
     }
 
     Ok(())
@@ -158,6 +193,88 @@ where
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    fn test_pipe(name: &str) -> std::fs::File {
+        use std::os::windows::io::FromRawHandle;
+        use windows::Win32::Storage::FileSystem::PIPE_ACCESS_INBOUND;
+        use windows::Win32::System::Pipes::{
+            CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
+        };
+        let handle = unsafe {
+            CreateNamedPipeW(
+                &windows::core::HSTRING::from(name),
+                PIPE_ACCESS_INBOUND,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                1,
+                4096,
+                4096,
+                0,
+                None,
+            )
+        };
+        assert!(!handle.is_invalid());
+        unsafe { std::fs::File::from_raw_handle(handle.0) }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn accepts_client_connected_before_server_waits() {
+        use std::os::windows::io::AsRawHandle;
+        let name = format!(r"\\.\pipe\agent-toast-test-{}", uuid::Uuid::new_v4());
+        let server = test_pipe(&name);
+        let _client = std::fs::OpenOptions::new().write(true).open(&name).unwrap();
+        connect_pipe(windows::Win32::Foundation::HANDLE(server.as_raw_handle())).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reads_message_after_early_client_disconnect() {
+        use std::io::Read;
+        use std::os::windows::io::AsRawHandle;
+        let name = format!(r"\\.\pipe\agent-toast-test-{}", uuid::Uuid::new_v4());
+        let mut server = test_pipe(&name);
+        let mut client = std::fs::OpenOptions::new().write(true).open(&name).unwrap();
+        client.write_all(b"done").unwrap();
+        drop(client);
+        connect_pipe(windows::Win32::Foundation::HANDLE(server.as_raw_handle())).unwrap();
+        let mut received = [0; 4];
+        server.read_exact(&mut received).unwrap();
+        assert_eq!(&received, b"done");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn simultaneous_sender_waits_through_busy_pipe_and_recreation() {
+        use std::io::Read;
+        use std::time::Duration;
+        let name = format!(r"\\.\pipe\agent-toast-test-{}", uuid::Uuid::new_v4());
+        let server = test_pipe(&name);
+        let busy_client = std::fs::OpenOptions::new().write(true).open(&name).unwrap();
+        let sender_name = name.clone();
+        let sender = std::thread::spawn(move || {
+            let request: NotifyRequest = serde_json::from_value(serde_json::json!({
+                "pid": 42, "event": "user_input_required", "message": "동시 질문"
+            }))
+            .unwrap();
+            try_send_to(&sender_name, &request).unwrap()
+        });
+        std::thread::sleep(Duration::from_millis(80));
+        drop(busy_client);
+        drop(server);
+        std::thread::sleep(Duration::from_millis(30));
+        let mut server = test_pipe(&name);
+        assert!(
+            sender.join().unwrap(),
+            "busy pipe must not drop the notification"
+        );
+        let mut length = [0; 4];
+        server.read_exact(&mut length).unwrap();
+        let mut payload = vec![0; u32::from_le_bytes(length) as usize];
+        server.read_exact(&mut payload).unwrap();
+        let received: NotifyRequest = serde_json::from_slice(&payload).unwrap();
+        assert_eq!(received.message.as_deref(), Some("동시 질문"));
+    }
+
     /// try_send가 사용하는 와이어 포맷 검증: [4바이트 LE 길이][JSON 페이로드]
     /// 실제 수신 측 디코딩 흐름을 시뮬레이션하여 프레임 단위로 검증
     #[test]
@@ -173,6 +290,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -206,6 +324,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -238,6 +357,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -260,6 +380,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -289,6 +410,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -314,6 +436,7 @@ mod tests {
                 hostname: None,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             };
 
             let data = serde_json::to_vec(&req).unwrap();
@@ -335,6 +458,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -373,6 +497,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -394,6 +519,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -415,6 +541,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -443,6 +570,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data = serde_json::to_vec(&req).unwrap();
@@ -540,6 +668,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let len = (data.len() as u32).to_le_bytes();
@@ -585,6 +714,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -604,6 +734,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -623,6 +754,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -642,6 +774,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -661,6 +794,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -681,6 +815,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let req_none = NotifyRequest {
             pid: 1,
@@ -693,6 +828,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         let data_empty = serde_json::to_vec(&req_empty).unwrap();
@@ -718,6 +854,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -737,6 +874,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -757,6 +895,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let len = data.len() as u32;
@@ -779,6 +918,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();
@@ -799,6 +939,7 @@ mod tests {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let data = serde_json::to_vec(&req).unwrap();
         let decoded: NotifyRequest = serde_json::from_slice(&data).unwrap();

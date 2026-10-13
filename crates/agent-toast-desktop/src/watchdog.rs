@@ -515,6 +515,7 @@ pub fn notify_if_recovered(app: &AppHandle, state: &NotificationManagerState) {
             hostname: None,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         crate::notification::show_notification(&app, &state, req);
     });

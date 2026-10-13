@@ -261,6 +261,7 @@ fn test_notification(app: AppHandle, title: Option<String>, message: Option<Stri
         hostname: None,
         orca_terminal_handle: None,
         orca_tab_id: None,
+        session_id: None,
     };
     log::debug!("[TEST] Spawning notification thread for event={}", event);
     std::thread::spawn(move || {

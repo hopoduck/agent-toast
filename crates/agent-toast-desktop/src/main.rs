@@ -194,6 +194,7 @@ fn main() {
             hostname: None,
             orca_terminal_handle: orca_terminal_handle(),
             orca_tab_id: orca_tab_id(),
+            session_id: None,
         };
 
         match pipe::try_send(&request) {
@@ -310,13 +311,14 @@ fn main() {
         .event
         .expect("--event is required when not using --daemon");
 
-    // The hook's stdin JSON carries the dynamic body candidates, and for Codex
-    // also the project folder (`cwd`), since Codex sets no project env var.
-    let hook_json = if args.dynamic || is_codex_hook {
-        agent_toast_core::dynamic::read_stdin_json()
-    } else {
-        None
-    };
+    // The hook's stdin JSON carries the session id that lets a newer toast
+    // replace an older one from the same session, the dynamic body candidates,
+    // and for Codex also the project folder (`cwd`), since Codex sets no
+    // project env var.
+    let hook_json = agent_toast_core::dynamic::read_stdin_json();
+    let session_id = hook_json
+        .as_ref()
+        .and_then(agent_toast_core::dynamic::extract_session_id);
 
     // With --dynamic, derive the body from the hook's stdin JSON; otherwise use
     // the static --message as-is.
@@ -367,6 +369,7 @@ fn main() {
         hostname: None,
         orca_terminal_handle: orca_terminal_handle(),
         orca_tab_id: orca_tab_id(),
+        session_id,
     };
 
     // Try to send to existing instance

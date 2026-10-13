@@ -207,6 +207,7 @@ fn show_update_notification(app: &AppHandle, state: &NotificationManagerState, v
         hostname: None,
         orca_terminal_handle: None,
         orca_tab_id: None,
+        session_id: None,
     };
 
     show_notification(app, state, req);
@@ -271,6 +272,7 @@ fn show_update_completed_notification(
         hostname: None,
         orca_terminal_handle: None,
         orca_tab_id: None,
+        session_id: None,
     };
 
     show_notification(app, state, req);

@@ -88,6 +88,11 @@ pub struct NotificationData {
     /// active to tell whether the user is looking at this session.
     #[serde(default)]
     pub orca_tab_id: Option<String>,
+
+    /// Agent session this toast belongs to. A newer toast from the same
+    /// session replaces this one (see [`NotificationManager::remove_session`]).
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 fn default_show_hostname() -> bool {
@@ -151,6 +156,26 @@ impl NotificationManager {
         let entry = &mut self.notifications[index];
         entry.id = new_id;
         Some(entry.clone())
+    }
+
+    /// 같은 세션의 토스트를 목록에서 빼고 그 id 를 돌려준다. 새 알림이 맨 끝
+    /// 자리로 들어가야 "방금 온 알림"이 보이므로, 기존 것은 제자리 갱신하지 않고
+    /// 닫는다. `session_id` 가 없으면 아무것도 빼지 않는다.
+    fn remove_session(&mut self, session_id: Option<&str>) -> Vec<String> {
+        let Some(sid) = session_id else {
+            return Vec::new();
+        };
+        let ids: Vec<String> = self
+            .notifications
+            .iter()
+            .filter(|n| n.session_id.as_deref() == Some(sid))
+            .map(|n| n.id.clone())
+            .collect();
+        self.notifications.retain(|n| !ids.contains(&n.id));
+        for id in &ids {
+            self.heights.remove(id);
+        }
+        ids
     }
 }
 
@@ -337,6 +362,8 @@ pub fn show_notification(
     };
 
     let mut mgr = state.lock().unwrap();
+    // 새 토스트 자리를 계산하기 전에 빼야, 닫힐 기존 것이 그 앞 칸을 차지하지 않는다.
+    let replaced = mgr.remove_session(request.session_id.as_deref());
     let id = mgr.next_id();
 
     let auto_dismiss_seconds = resolve_auto_dismiss(
@@ -358,13 +385,26 @@ pub fn show_notification(
         show_hostname: crate::setup::read_show_hostname(),
         orca_terminal_handle: request.orca_terminal_handle.clone(),
         orca_tab_id: request.orca_tab_id.clone(),
+        session_id: request.session_id.clone(),
     };
 
     // Calculate position: stack from bottom-right
     let index = mgr.notifications.len();
     mgr.notifications.push(data.clone());
     let y_offset = cumulative_offset(&mgr.notifications, &mgr.heights, index);
+    let restack = (!replaced.is_empty()).then(|| (mgr.notifications.clone(), mgr.heights.clone()));
     drop(mgr);
+
+    // 대체된 토스트는 사용자가 처리한 게 아니므로 닫힘 사유 통계에 넣지 않는다.
+    if let Some((remaining, heights)) = restack {
+        for old in &replaced {
+            log::debug!("[NOTIFY] replaced by same session: id={}", old);
+            if let Some(win) = app.get_webview_window(old) {
+                let _ = win.destroy();
+            }
+        }
+        reposition_notifications(app, &remaining, &heights);
+    }
 
     // Create notification window
     {
@@ -459,6 +499,18 @@ fn build_window(
         .build();
     crate::watchdog::mark(crate::watchdog::Step::NotifyAfterBuild);
 
+    // WebView creation pumps messages. Another hook or a focus change may
+    // remove this entry while no registered window exists to destroy yet.
+    // Dispose of that late window before scheduling content, sound, or show.
+    if get_notification_for_window(state, &data.id).is_none() {
+        if let Ok(win) = &window {
+            let _ = win.destroy();
+        }
+        log::debug!("[NOTIFY] closed during window creation: id={}", data.id);
+        crate::watchdog::mark(crate::watchdog::Step::Idle);
+        return;
+    }
+
     // 워치독이 이 생성을 깨웠다면 웹뷰는 취소됐고, 창은 떠도 영영 그려지지 않는다.
     if crate::watchdog::unstick_count() != unsticks_before {
         if let Ok(win) = &window {
@@ -501,8 +553,12 @@ fn build_window(
             // Also emit event as backup (frontend primarily uses invoke)
             let label = data.id.clone();
             let app_clone = app.clone();
+            let emit_state = state.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(500));
+                if get_notification_for_window(&emit_state, &label).is_none() {
+                    return;
+                }
                 match app_clone.emit_to(&label, "notification-data", &data) {
                     Ok(_) => log::debug!("[NOTIFY] Event emitted: id={}", label),
                     Err(e) => {
@@ -516,8 +572,12 @@ fn build_window(
             // 다시 불러도 무해하므로 확인 없이 그냥 부른다.
             let fallback_label = win.label().to_string();
             let fallback_app = app.clone();
+            let fallback_state = state.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(400));
+                if get_notification_for_window(&fallback_state, &fallback_label).is_none() {
+                    return;
+                }
                 if let Some(win) = fallback_app.get_webview_window(&fallback_label) {
                     let _ = win.show();
                 }
@@ -932,6 +992,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         }
     }
 
@@ -941,6 +1002,60 @@ mod tests {
             event_display: event_display.to_string(),
             ..nd("notify-x")
         }
+    }
+
+    // ── remove_session tests ──
+
+    fn nd_session(id: &str, session: Option<&str>) -> NotificationData {
+        NotificationData {
+            session_id: session.map(str::to_string),
+            ..nd(id)
+        }
+    }
+
+    fn manager_with(items: Vec<NotificationData>) -> NotificationManager {
+        let mut mgr = NotificationManager::new();
+        for n in items {
+            mgr.heights.insert(n.id.clone(), 100.0);
+            mgr.notifications.push(n);
+        }
+        mgr
+    }
+
+    #[test]
+    fn remove_session_drops_only_that_session() {
+        let mut mgr = manager_with(vec![
+            nd_session("notify-1", Some("a")),
+            nd_session("notify-2", Some("b")),
+            nd_session("notify-3", Some("a")),
+        ]);
+        let removed = mgr.remove_session(Some("a"));
+        assert_eq!(removed, vec!["notify-1", "notify-3"]);
+        assert_eq!(mgr.live_ids(), vec!["notify-2"]);
+        assert!(!mgr.heights.contains_key("notify-1"));
+        assert!(!mgr.heights.contains_key("notify-3"));
+        assert!(mgr.heights.contains_key("notify-2"));
+    }
+
+    #[test]
+    fn remove_session_without_id_keeps_everything() {
+        // 세션을 모르는 알림(수동 호출, 구버전 sender)끼리는 서로 대체하지 않는다.
+        let mut mgr = manager_with(vec![
+            nd_session("notify-1", None),
+            nd_session("notify-2", None),
+        ]);
+        assert!(mgr.remove_session(None).is_empty());
+        assert_eq!(mgr.live_ids(), vec!["notify-1", "notify-2"]);
+    }
+
+    #[test]
+    fn remove_session_ignores_toasts_without_session() {
+        let mut mgr = manager_with(vec![
+            nd_session("notify-1", None),
+            nd_session("notify-2", Some("a")),
+        ]);
+        assert_eq!(mgr.remove_session(Some("a")), vec!["notify-2"]);
+        assert_eq!(mgr.live_ids(), vec!["notify-1"]);
     }
 
     // ── closes_on_foreground tests ──
@@ -979,6 +1094,7 @@ mod tests {
             source_hwnd: 4242,
             orca_terminal_handle: Some("term_abc".into()),
             orca_tab_id: Some("tab-abc".into()),
+            session_id: None,
             ..nd("notify-1")
         };
         assert!(!closes_on_foreground(&n, 4242, 4242));
@@ -1176,6 +1292,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1204,6 +1321,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1226,6 +1344,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         assert!(data.process_tree.is_empty());
     }
@@ -1245,6 +1364,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1302,6 +1422,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             });
         }
         let result = get_notification_for_window(&state, "notify-1");
@@ -1329,6 +1450,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             });
             mgr.notifications.push(NotificationData {
                 id: "notify-2".to_string(),
@@ -1343,6 +1465,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             });
         }
 
@@ -1433,6 +1556,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             };
             assert_eq!(data.source, source);
         }
@@ -1454,6 +1578,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             };
             assert_eq!(data.auto_dismiss_seconds, seconds);
         }
@@ -1474,6 +1599,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let cloned = data.clone();
         assert_eq!(cloned.id, data.id);
@@ -1500,6 +1626,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
 
         {
@@ -1535,6 +1662,7 @@ mod tests {
                     show_hostname: false,
                     orca_terminal_handle: None,
                     orca_tab_id: None,
+                    session_id: None,
                 });
             }
             assert_eq!(mgr.notifications.len(), 5);
@@ -1593,6 +1721,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             });
         }
 
@@ -1618,6 +1747,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let debug = format!("{:?}", data);
         assert!(debug.contains("test"));
@@ -1670,6 +1800,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1692,6 +1823,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1715,6 +1847,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1736,6 +1869,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1757,6 +1891,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1778,6 +1913,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
@@ -1819,6 +1955,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             });
         }
         // 빈 ID로도 조회 가능
@@ -1844,6 +1981,7 @@ mod tests {
                 show_hostname: false,
                 orca_terminal_handle: None,
                 orca_tab_id: None,
+                session_id: None,
             });
             // 존재하지 않는 ID로 retain → 변화 없음
             mgr.notifications.retain(|n| n.id != "nonexistent");
@@ -1870,6 +2008,7 @@ mod tests {
                     show_hostname: false,
                     orca_terminal_handle: None,
                     orca_tab_id: None,
+                    session_id: None,
                 });
             }
             // source_hwnd 기준 필터 (모든 항목이 100)
@@ -1898,6 +2037,7 @@ mod tests {
             show_hostname: false,
             orca_terminal_handle: None,
             orca_tab_id: None,
+            session_id: None,
         };
         let json = serde_json::to_string(&data).unwrap();
         let deserialized: NotificationData = serde_json::from_str(&json).unwrap();
