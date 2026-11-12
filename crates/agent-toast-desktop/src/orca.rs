@@ -25,7 +25,9 @@
 //! state under `profiles/<active profile>/`. Current Orca keeps it in SQLite,
 //! `profile-state.db`; older builds wrote `orca-data.json` instead, and the
 //! migration leaves that file behind frozen at its last value, so the database
-//! wins whenever it exists.
+//! wins whenever it exists. Inside it, Orca 1.4.x moved `workspaceSession` from
+//! one whole-document row to per-key rows in `profile_state_document_parts`,
+//! freezing the old row the same way.
 //!
 //! Both are Orca internals rather than a published API, so every lookup here
 //! fails soft: a missing file, an unreachable pipe, an unexpected frame or a
@@ -289,6 +291,9 @@ fn read_db_active_tab_id(db: &Path) -> Option<String> {
     )
     .ok()?;
     conn.busy_timeout(DB_BUSY_TIMEOUT).ok()?;
+    if let Some(split) = read_split_active_tab_id(&conn) {
+        return split;
+    }
     let payload: String = conn
         .query_row(
             "SELECT payload FROM profile_state_documents WHERE domain = 'workspaceSession'",
@@ -297,6 +302,36 @@ fn read_db_active_tab_id(db: &Path) -> Option<String> {
         )
         .ok()?;
     parse_session_active_tab_id(&payload)
+}
+
+/// Active tab out of the split layout Orca 1.4.x moved `workspaceSession` to:
+/// one row per top-level key in `profile_state_document_parts`, each payload
+/// that key's JSON value. Once split, the whole-document row stops changing
+/// and keeps the value it had at the split, so a `parts_meta` row decides the
+/// source. `None` means the database predates the split (tables absent or no
+/// meta row); `Some(None)` means split, with no active tab recorded.
+fn read_split_active_tab_id(conn: &rusqlite::Connection) -> Option<Option<String>> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        "SELECT 1 FROM profile_state_document_parts_meta WHERE domain = 'workspaceSession'",
+        [],
+        |_| Ok(()),
+    )
+    .ok()?;
+    let payload: Option<String> = conn
+        .query_row(
+            "SELECT payload FROM profile_state_document_parts
+             WHERE domain = 'workspaceSession' AND part_key = '[\"activeTabId\"]'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()?;
+    Some(
+        payload
+            .and_then(|p| serde_json::from_str::<Option<String>>(&p).ok().flatten())
+            .filter(|id| !id.is_empty()),
+    )
 }
 
 /// The live profile's persisted state. The database wins when it exists,
@@ -617,6 +652,53 @@ mod tests {
             )
             .unwrap();
         assert_eq!(read_db_active_tab_id(&db).as_deref(), Some("tab-2"));
+
+        drop(writer);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Orca 1.4.x splits `workspaceSession` into one row per top-level key in
+    /// `profile_state_document_parts` and stops updating the whole-document
+    /// row, which keeps the value it had at the split.
+    #[test]
+    fn split_document_parts_win_over_the_frozen_document() {
+        let dir = std::env::temp_dir().join(format!("agent-toast-orca-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("profile-state.db");
+
+        let writer = rusqlite::Connection::open(&db).unwrap();
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 CREATE TABLE profile_state_documents (
+                   domain TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL
+                 );
+                 CREATE TABLE profile_state_document_parts_meta (
+                   domain TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL
+                 );
+                 CREATE TABLE profile_state_document_parts (
+                   domain TEXT NOT NULL, part_key TEXT NOT NULL,
+                   ordinal INTEGER NOT NULL, payload TEXT NOT NULL,
+                   PRIMARY KEY (domain, part_key)
+                 );
+                 INSERT INTO profile_state_documents VALUES
+                   ('workspaceSession', '{\"activeTabId\":\"frozen\"}');
+                 INSERT INTO profile_state_document_parts_meta VALUES ('workspaceSession', 1);
+                 INSERT INTO profile_state_document_parts VALUES
+                   ('workspaceSession', '[\"activeRepoId\"]', 1024, '\"r1\"'),
+                   ('workspaceSession', '[\"activeTabId\"]', 3072, '\"tab-live\"');",
+            )
+            .unwrap();
+        assert_eq!(read_db_active_tab_id(&db).as_deref(), Some("tab-live"));
+
+        // Once split, a missing part means no active tab, not "ask the document".
+        writer
+            .execute(
+                "DELETE FROM profile_state_document_parts WHERE part_key = '[\"activeTabId\"]'",
+                [],
+            )
+            .unwrap();
+        assert!(read_db_active_tab_id(&db).is_none());
 
         drop(writer);
         let _ = std::fs::remove_dir_all(&dir);
