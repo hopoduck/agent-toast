@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { invoke } from "@tauri-apps/api/core";
-import { Layers, Sparkles, Type } from "lucide-vue-next";
+import { Layers, Sparkles, Type } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { HookConfig, NotificationData, ToastStyle } from "../types";

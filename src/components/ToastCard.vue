@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronRight, Circle, Pencil, X } from "lucide-vue-next";
+import { Check, ChevronRight, Circle, Pencil, X } from "@lucide/vue";
 import MarkdownIt from "markdown-it";
 import { computed, type Component } from "vue";
 import { useI18n } from "vue-i18n";

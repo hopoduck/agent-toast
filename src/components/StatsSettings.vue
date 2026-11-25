@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { Activity, BellOff, Eye, Globe } from "lucide-vue-next";
+import { Activity, BellOff, Eye, Globe } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { CounterSet, GlobalStats, Stats } from "../types";

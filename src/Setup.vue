@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Check, ChevronDown, Moon, RotateCcw, Sun, X } from "lucide-vue-next";
+import { Check, ChevronDown, Moon, RotateCcw, Sun, X } from "@lucide/vue";
 import { onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast, Toaster } from "vue-sonner";

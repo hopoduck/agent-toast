@@ -13,7 +13,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import SlidingTabs from "./SlidingTabs.vue";
 import CodeBlock from "./CodeBlock.vue";
-import { Radio } from "lucide-vue-next";
+import { Radio } from "@lucide/vue";
 import type { HookConfig } from "../types";
 
 const { t } = useI18n();

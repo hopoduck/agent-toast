@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, ChevronRight, Layers, MessageSquareText, Puzzle, Star } from "lucide-vue-next";
+import { Bot, ChevronRight, Layers, MessageSquareText, Puzzle, Star } from "@lucide/vue";
 import { onMounted, ref, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import claudeLogo from "../assets/claude.svg";
