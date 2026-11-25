@@ -186,7 +186,7 @@ const downloadSnippet = computed(() => {
       </p>
     </div>
 
-    <!-- Guide steps (only when enabled) — matches HowtoSettings card pattern -->
+    <!-- Guide steps (only when enabled) — matches the About tab's how-to cards -->
     <template v-if="config.http_enabled">
       <!-- STEP 01: Download -->
       <div

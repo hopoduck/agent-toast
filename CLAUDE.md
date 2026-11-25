@@ -138,15 +138,14 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 | -------------------------------- | ------------------------------------------------------------------------------ |
 | `App.vue`                        | Notification window shell — auto-dismiss progress bar, dynamic window height, light/dark theme; delegates card rendering to `ToastCard.vue` |
 | `components/ToastCard.vue`       | The toast card itself — event-type color coding, inline markdown body (markdown-it, escaped), Claude/OpenAI logo, applies `ToastStyle` (font + design) |
-| `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / design / howto / about). General, design and remote save on change (`save_app_settings`, debounced); only the hooks tab waits for the save button, since its values (agents, auto-start `--daemon` hook, dynamic message, event rows) are what the hook commands are built from. Before the first save (no hooks yet) every tab waits for the button |
+| `Setup.vue`                      | Settings window with tab navigation (general / hooks / design / remote / stats / about, from `TABS`). General, design and remote save on change (`save_app_settings`, debounced); only the hooks tab waits for the save button, since its values (agents, auto-start `--daemon` hook, dynamic message, event rows) are what the hook commands are built from. Before the first save (no hooks yet) every tab waits for the button |
 | `components/GeneralSettings.vue` | Position, auto-dismiss, sound settings                                         |
 | `components/HookSettings.vue`    | Agent switches (Claude Code / Codex), agent-message toggle, and shared per-event enable/message rows |
 | `components/RemoteSettings.vue`  | Remote HTTP receiver settings + `agent-toast-send` setup guide                 |
 | `components/DesignSettings.vue`  | Toast appearance — sans/mono system-font picker (`ToastStyle`), bundled D2Coding, live preview |
-| `components/HowtoSettings.vue`   | Usage guide tab                                                                |
-| `components/AboutSettings.vue`   | About tab with version info and links                                          |
+| `components/AboutSettings.vue`   | About tab with version info, update check, how-to-use steps, links and changelog |
 | `components/SlidingTabs.vue`     | Animated tab switcher used by `Setup.vue`                                      |
-| `components/CodeBlock.vue`       | Syntax-highlighted code block used in the howto/setup guides                   |
+| `components/CodeBlock.vue`       | Syntax-highlighted code block used in the remote setup guide                   |
 | `i18n.ts`                        | vue-i18n setup — locale strings live in `src/locales/{ko,en}.json`             |
 | `types.ts`                       | Shared TypeScript interfaces (`HookConfig`, `NotificationData`, `ToastStyle`, etc.) |
 

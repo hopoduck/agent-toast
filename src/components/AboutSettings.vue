@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { Star } from "@lucide/vue";
+import { ListChecks, Star } from "@lucide/vue";
 import { computed, h, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast } from "vue-sonner";
@@ -16,6 +16,11 @@ import MarkdownIt from "markdown-it";
 import logoPng from "../assets/logo.png";
 
 const { t } = useI18n();
+const howtoSteps = [
+  { num: "01", key: "step1" },
+  { num: "02", key: "step2" },
+  { num: "03", key: "step3" },
+];
 const version = ref("...");
 const portable = ref(false);
 
@@ -250,6 +255,37 @@ onMounted(async () => {
         </Button>
       </div>
     </div>
+
+    <!-- How to use -->
+    <section class="anim-item shrink-0 flex flex-col gap-1.5" style="animation-delay:125ms">
+      <div class="flex items-center gap-1.5 px-1">
+        <ListChecks :size="12" class="text-muted-foreground/50" />
+        <span class="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground/50">
+          {{ t("about.howto_title") }}
+        </span>
+      </div>
+      <div class="flex flex-col gap-2">
+        <div
+          v-for="step in howtoSteps"
+          :key="step.key"
+          class="group relative overflow-hidden rounded-xl border border-border bg-card px-4 py-3.5 transition-all duration-200 hover:border-primary/35 hover:shadow-sm"
+        >
+          <!-- Ghost watermark number -->
+          <span
+            class="pointer-events-none absolute left-2 top-1 select-none font-black leading-none text-foreground/[0.06] transition-colors duration-200 group-hover:text-primary/12"
+            style="font-size: 48px; font-family: 'Montserrat', sans-serif;"
+          >{{ step.num }}</span>
+          <div class="flex flex-col gap-0.5 min-w-0 pl-10">
+            <span class="text-[13px] font-semibold text-foreground leading-snug">
+              {{ t(`about.howto_${step.key}_title`) }}
+            </span>
+            <span class="text-[11.5px] text-muted-foreground leading-relaxed">
+              {{ t(`about.howto_${step.key}_desc`) }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Star Request -->
     <button

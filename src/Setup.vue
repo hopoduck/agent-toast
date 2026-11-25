@@ -29,13 +29,15 @@ import AboutSettings from "./components/AboutSettings.vue";
 import DesignSettings from "./components/DesignSettings.vue";
 import GeneralSettings from "./components/GeneralSettings.vue";
 import HookSettings from "./components/HookSettings.vue";
-import HowtoSettings from "./components/HowtoSettings.vue";
 import RemoteSettings from "./components/RemoteSettings.vue";
 import SlidingTabs from "./components/SlidingTabs.vue";
 import StatsSettings from "./components/StatsSettings.vue";
 import type { HookConfig, SaveResult, SettingsFiles } from "./types";
 
 const { t, locale } = useI18n();
+// 처음 거치는 설정(프로그램·훅)을 앞에, 모습을 꾸미는 탭을 그다음, 일부만 쓰는
+// 원격을 설정 끝에, 보기만 하는 탭을 마지막에 둔다
+const TABS = ["general", "hooks", "design", "remote", "stats", "about"] as const;
 const activeTab = ref<string>("general");
 
 const isDark = ref(document.documentElement.classList.contains("dark"));
@@ -170,20 +172,14 @@ onMounted(async () => {
 
   // Check URL hash for initial tab
   const hash = window.location.hash.slice(1);
-  if (
-    hash &&
-    ["general", "design", "hooks", "remote", "stats", "howto", "about"].includes(hash)
-  ) {
+  if ((TABS as readonly string[]).includes(hash)) {
     activeTab.value = hash;
   }
 
   // Listen for hash changes (when window already exists)
   window.addEventListener("hashchange", () => {
     const h = window.location.hash.slice(1);
-    if (
-      h &&
-      ["general", "design", "hooks", "remote", "stats", "howto", "about"].includes(h)
-    ) {
+    if ((TABS as readonly string[]).includes(h)) {
       activeTab.value = h;
     }
   });
@@ -494,15 +490,7 @@ async function onClose() {
       <div class="flex flex-col flex-1 min-h-0 gap-4">
         <SlidingTabs
           v-model="activeTab"
-          :tabs="[
-            { value: 'general', label: t('setup.tab_general') },
-            { value: 'hooks', label: t('setup.tab_hooks') },
-            { value: 'remote', label: t('setup.tab_remote') },
-            { value: 'design', label: t('setup.tab_design') },
-            { value: 'stats', label: t('setup.tab_stats') },
-            { value: 'howto', label: t('setup.tab_howto') },
-            { value: 'about', label: t('setup.tab_about') },
-          ]"
+          :tabs="TABS.map((value) => ({ value, label: t(`setup.tab_${value}`) }))"
         />
 
         <div class="flex flex-col flex-1 min-h-0">
@@ -519,7 +507,6 @@ async function onClose() {
           <HookSettings v-if="activeTab === 'hooks'" v-model="config" />
           <RemoteSettings v-if="activeTab === 'remote'" v-model="config" />
           <StatsSettings v-if="activeTab === 'stats'" />
-          <HowtoSettings v-if="activeTab === 'howto'" />
           <AboutSettings v-if="activeTab === 'about'" />
         </div>
       </div>
@@ -549,7 +536,7 @@ async function onClose() {
       </Card>
 
       <!-- Actions -->
-      <div v-if="activeTab !== 'about' && activeTab !== 'howto' && activeTab !== 'stats'" class="flex items-center gap-2">
+      <div v-if="activeTab !== 'about' && activeTab !== 'stats'" class="flex items-center gap-2">
         <DropdownMenu @update:open="(open) => open && refreshSettingsFiles()">
           <DropdownMenuTrigger as-child>
             <Button variant="secondary">
