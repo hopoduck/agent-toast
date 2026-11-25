@@ -21,7 +21,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, ChevronDown, Moon, RotateCcw, Sun, X } from "@lucide/vue";
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { toast, Toaster } from "vue-sonner";
 import "vue-sonner/style.css";
@@ -207,6 +207,7 @@ onMounted(async () => {
     config.value.codex_enabled = saved.codex_enabled;
   }
   locale.value = config.value.locale;
+  configLoaded.value = true;
   exePath.value = await invoke<string>("get_exe_path");
   savedExePath.value = await invoke<string | null>("get_saved_exe_path");
   isDevMode.value = await invoke<boolean>("is_dev_mode");
@@ -214,7 +215,69 @@ onMounted(async () => {
     exePathMismatch.value =
       normalizePath(savedExePath.value) !== normalizePath(exePath.value);
   }
+
+  // 창을 닫기 직전에 대기 중인 바로 저장을 마저 쓴다
+  getCurrentWindow().onCloseRequested(() => flushAppSettings());
 });
+
+// 프로그램 설정·디자인·원격 탭은 바뀌는 즉시 저장한다. 훅 명령에 들어가는 값은
+// 모두 훅 설정 탭에 있어서, 거기만 저장 버튼을 누를 때까지 기다린다.
+const INSTANT_TABS = ["general", "design", "remote"];
+const APP_KEYS = [
+  "title_display_mode",
+  "auto_close_on_focus",
+  "auto_dismiss_seconds",
+  "notification_position",
+  "notification_sound",
+  "notification_sound_file",
+  "notification_monitor",
+  "locale",
+  "http_enabled",
+  "http_port",
+  "show_hostname",
+  "toast_bar",
+  "toast_border",
+  "toast_effects",
+  "toast_body",
+  "toast_density",
+  "toast_font_sans",
+  "toast_font_mono",
+] as const satisfies readonly (keyof HookConfig)[];
+const SAVE_DELAY_MS = 300;
+
+const configLoaded = ref(false);
+const appSettings = computed(() =>
+  JSON.stringify(APP_KEYS.map((key) => config.value[key])),
+);
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let saving: Promise<void> = Promise.resolve();
+
+watch(appSettings, () => {
+  // 첫 실행에는 훅이 아직 없어서, 저장 버튼이 훅 등록과 함께 처음 쓴다
+  if (!configLoaded.value || !configSaved.value) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => void flushAppSettings(), SAVE_DELAY_MS);
+});
+
+function flushAppSettings(): Promise<void> {
+  if (saveTimer === undefined) return saving;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  saving = saving.then(saveAppSettings);
+  return saving;
+}
+
+async function saveAppSettings() {
+  try {
+    await invoke("save_app_settings", { config: config.value });
+  } catch (e) {
+    toast.error(t("setup.save_error", { msg: String(e) }));
+  }
+}
+
+const showSaveButton = computed(
+  () => !configSaved.value || !INSTANT_TABS.includes(activeTab.value),
+);
 
 async function onSave() {
   isSaving.value = true;
@@ -373,7 +436,9 @@ async function onClose() {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>{{ t('setup.reset_title') }}</AlertDialogTitle>
-                <AlertDialogDescription>{{ t('setup.reset_confirm') }}</AlertDialogDescription>
+                <AlertDialogDescription>{{
+                  configSaved ? t('setup.reset_confirm_instant') : t('setup.reset_confirm')
+                }}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>{{ t('setup.cancel') }}</AlertDialogCancel>
@@ -515,7 +580,7 @@ async function onClose() {
         <Button variant="destructive" @click="onClose">
           {{ t("setup.close") }}
         </Button>
-        <Button @click="onSave" :disabled="isSaving">
+        <Button v-if="showSaveButton" @click="onSave" :disabled="isSaving">
           <template v-if="justSaved"><Check />{{ t("setup.saved") }}</template>
           <template v-else>{{ isSaving ? t("setup.saving") : t("setup.save") }}</template>
         </Button>

@@ -185,6 +185,15 @@ function toggleGroup(id: string) {
           />
         </label>
       </div>
+      <label
+        class="flex items-center justify-between gap-3 rounded-[12px] border border-border bg-card px-3.5 py-2.5 cursor-pointer hover:bg-muted/20 transition-colors duration-100"
+      >
+        <div class="flex flex-col gap-0.5 min-w-0 pr-2">
+          <span class="text-sm font-medium text-foreground">{{ t("hooks.auto_start") }}</span>
+          <span class="text-[11px] text-muted-foreground leading-tight">{{ t("hooks.auto_start_desc") }}</span>
+        </div>
+        <Switch v-model="config.auto_start" class="shrink-0" />
+      </label>
     </section>
 
     <!-- Dynamic message -->

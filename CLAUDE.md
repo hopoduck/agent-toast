@@ -138,7 +138,7 @@ Vue 3 + TypeScript + Composition API. UI components use shadcn-vue (`src/compone
 | -------------------------------- | ------------------------------------------------------------------------------ |
 | `App.vue`                        | Notification window shell — auto-dismiss progress bar, dynamic window height, light/dark theme; delegates card rendering to `ToastCard.vue` |
 | `components/ToastCard.vue`       | The toast card itself — event-type color coding, inline markdown body (markdown-it, escaped), Claude/OpenAI logo, applies `ToastStyle` (font + design) |
-| `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / design / howto / about) |
+| `Setup.vue`                      | Settings window with tab navigation (general / hooks / remote / design / howto / about). General, design and remote save on change (`save_app_settings`, debounced); only the hooks tab waits for the save button, since its values (agents, auto-start `--daemon` hook, dynamic message, event rows) are what the hook commands are built from. Before the first save (no hooks yet) every tab waits for the button |
 | `components/GeneralSettings.vue` | Position, auto-dismiss, sound settings                                         |
 | `components/HookSettings.vue`    | Agent switches (Claude Code / Codex), agent-message toggle, and shared per-event enable/message rows |
 | `components/RemoteSettings.vue`  | Remote HTTP receiver settings + `agent-toast-send` setup guide                 |

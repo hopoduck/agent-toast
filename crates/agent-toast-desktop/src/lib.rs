@@ -451,6 +451,7 @@ pub fn run_app(initial_request: Option<NotifyRequest>, open_setup: bool) {
             setup::get_hook_config,
             setup::get_agent_presence,
             setup::save_hook_config,
+            setup::save_app_settings,
             setup::get_exe_path,
             setup::get_saved_exe_path,
             setup::open_settings_file,

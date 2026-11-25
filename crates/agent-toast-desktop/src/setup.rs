@@ -1053,6 +1053,27 @@ pub fn is_hook_config_saved() -> bool {
 /// Write `agent_toast` settings block into `root`, preserving any pre-existing
 /// keys within `agent_toast` that are not managed by this struct.
 fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
+    write_app_settings(root, config);
+    let mut cn = root["agent_toast"].as_object().cloned().unwrap_or_default();
+    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
+    cn.insert("claude_enabled".into(), Value::Bool(config.claude_enabled));
+    cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
+    cn.insert("events".into(), saved_events(config));
+    cn.insert(
+        "dynamic_message_enabled".into(),
+        Value::Bool(config.dynamic_message_enabled),
+    );
+    cn.insert(
+        "version".into(),
+        Value::String(env!("CARGO_PKG_VERSION").to_string()),
+    );
+    root["agent_toast"] = Value::Object(cn);
+}
+
+/// Write the settings that apply the moment they change (general, design and
+/// remote tabs) into the `agent_toast` block. None of them is part of a hook
+/// command, so the hooks and the hook rows' snapshot stay as they are.
+fn write_app_settings(root: &mut Value, config: &HookConfig) {
     let mut cn = root["agent_toast"].as_object().cloned().unwrap_or_default();
     cn.insert(
         "title_display_mode".into(),
@@ -1087,17 +1108,9 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
         Value::String(config.notification_monitor.clone()),
     );
     cn.insert("locale".into(), Value::String(config.locale.clone()));
-    cn.insert("auto_start".into(), Value::Bool(config.auto_start));
-    cn.insert("claude_enabled".into(), Value::Bool(config.claude_enabled));
-    cn.insert("codex_enabled".into(), Value::Bool(config.codex_enabled));
-    cn.insert("events".into(), saved_events(config));
     cn.insert("http_enabled".into(), Value::Bool(config.http_enabled));
     cn.insert("http_port".into(), Value::Number(config.http_port.into()));
     cn.insert("show_hostname".into(), Value::Bool(config.show_hostname));
-    cn.insert(
-        "dynamic_message_enabled".into(),
-        Value::Bool(config.dynamic_message_enabled),
-    );
     cn.insert("toast_bar".into(), Value::String(config.toast_bar.clone()));
     cn.insert(
         "toast_border".into(),
@@ -1129,10 +1142,6 @@ fn write_agent_toast_settings(root: &mut Value, config: &HookConfig) {
     cn.insert(
         "toast_font_mono".into(),
         Value::String(config.toast_font_mono.clone()),
-    );
-    cn.insert(
-        "version".into(),
-        Value::String(env!("CARGO_PKG_VERSION").to_string()),
     );
     root["agent_toast"] = Value::Object(cn);
 }
@@ -1267,6 +1276,38 @@ pub fn save_hook_config(
     let json = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
     std::fs::write(&path, &json).map_err(|e| e.to_string())?;
 
+    apply_app_settings(&app, &state, &config)?;
+
+    Ok(SaveResult {
+        codex_hooks_path: (config.codex_enabled && codex_hooks_changed)
+            .then(|| codex_hooks_path().to_string_lossy().to_string()),
+    })
+}
+
+/// Save the instantly applied settings (general, design and remote tabs)
+/// without touching the hooks or the hook tab's values, which keep waiting
+/// for the save button.
+#[tauri::command]
+pub fn save_app_settings(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::notification::NotificationManagerState>,
+    config: HookConfig,
+) -> Result<(), String> {
+    let path = settings_path();
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut root: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    write_app_settings(&mut root, &config);
+    let json = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, &json).map_err(|e| e.to_string())?;
+    apply_app_settings(&app, &state, &config)
+}
+
+/// Bring the running app in line with settings just written to disk.
+fn apply_app_settings(
+    app: &tauri::AppHandle,
+    state: &crate::notification::NotificationManagerState,
+    config: &HookConfig,
+) -> Result<(), String> {
     // 사운드 복사본 정리: 설정에 참조된 파일만 남긴다 (기본값 복원 후 저장 시 전체 삭제)
     prune_sounds_dir(
         &sounds_dir(),
@@ -1274,18 +1315,14 @@ pub fn save_hook_config(
     );
 
     // HTTP 서버 상태를 새 설정과 동기화 (즉시 시작/중지/재시작)
-    crate::sync_http_server(&app).map_err(|e| format!("HTTP 서버 시작 실패: {e}"))?;
+    crate::sync_http_server(app).map_err(|e| format!("HTTP 서버 시작 실패: {e}"))?;
 
     // 저장 후 이미 떠 있는 알림들의 위치를 즉시 반영
-    crate::notification::reposition_all(&app, &state);
+    crate::notification::reposition_all(app, state);
 
     // 트레이 메뉴 텍스트를 현재 locale에 맞게 갱신
-    crate::update_tray_locale(&app);
-
-    Ok(SaveResult {
-        codex_hooks_path: (config.codex_enabled && codex_hooks_changed)
-            .then(|| codex_hooks_path().to_string_lossy().to_string()),
-    })
+    crate::update_tray_locale(app);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1858,6 +1895,43 @@ mod tests {
         config.notification_sound_file = None;
         write_agent_toast_settings(&mut root, &config);
         assert!(root["agent_toast"]["notification_sound_file"].is_null());
+    }
+
+    #[test]
+    fn instant_settings_leave_the_hooks_and_hook_rows_alone() {
+        let saved = HookConfig {
+            stop_message: "saved".into(),
+            codex_enabled: true,
+            dynamic_message_enabled: false,
+            ..HookConfig::default()
+        };
+        let mut root = serde_json::json!({ "hooks": { "Stop": [{ "hooks": [] }] } });
+        write_agent_toast_settings(&mut root, &saved);
+        let hooks_before = root["hooks"].clone();
+        let events_before = root["agent_toast"]["events"].clone();
+
+        // The screen holds an unsaved hook-row edit next to the instant changes.
+        let screen = HookConfig {
+            stop_message: "unsaved".into(),
+            codex_enabled: false,
+            dynamic_message_enabled: true,
+            auto_start: !saved.auto_start,
+            locale: "en".into(),
+            http_port: 40000,
+            toast_density: "compact".into(),
+            ..saved.clone()
+        };
+        write_app_settings(&mut root, &screen);
+
+        let cn = &root["agent_toast"];
+        assert_eq!(cn["locale"], "en");
+        assert_eq!(cn["http_port"], 40000);
+        assert_eq!(cn["toast_density"], "compact");
+        assert_eq!(root["hooks"], hooks_before);
+        assert_eq!(cn["events"], events_before);
+        assert_eq!(cn["codex_enabled"], true);
+        assert_eq!(cn["dynamic_message_enabled"], false);
+        assert_eq!(cn["auto_start"], saved.auto_start);
     }
 
     #[test]

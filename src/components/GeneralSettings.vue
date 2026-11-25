@@ -313,15 +313,6 @@ function onResetSound() {
             </Button>
           </div>
         </div>
-
-        <!-- Auto start -->
-        <div class="flex items-center justify-between bg-card px-3.5 py-2.5 gap-3 hover:bg-muted/20 transition-colors duration-100">
-          <div class="flex flex-col gap-0.5">
-            <span class="text-sm font-medium text-foreground">{{ t("general.auto_start") }}</span>
-            <span class="text-[11px] text-muted-foreground leading-none">{{ t("general.auto_start_desc") }}</span>
-          </div>
-          <Switch v-model="config.auto_start" />
-        </div>
       </div>
     </section>
 
