@@ -253,7 +253,7 @@ function onResetSound() {
           <NumberField
             v-model="config.auto_dismiss_seconds"
             :min="0"
-            :max="300"
+            :max="86400"
             :step="1"
             class="w-[96px]"
           >
